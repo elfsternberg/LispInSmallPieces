@@ -26,7 +26,7 @@
 (define env_global env_init)
 
 ; So, this macro places *into the current scope* (i.e. no building of
-; a new scope that get's reaped upon exit) the names of variables and
+; a new scope that gets reaped upon exit) the names of variables and
 ; potential initial values.
 
 (define-syntax definitial
@@ -49,6 +49,9 @@
              (apply value values)
              (wrong-syntax #'here "Incorrect arity ~s" (list 'name values))))))))
 
+; Sometimes, you do have to define something before you use it. Lesson
+; learned.
+
 (define the-false-value (cons "false" "boolean"))
 
 (definitial t #t)
@@ -68,9 +71,9 @@
 
 ; This function extends the environment so that *at this moment of
 ; extension* the conslist head points to the old environment, then
-; when it's done it points to the new environment.  What's really
-; interesting is that the conslist head points to the last object
-; initialized, not the first.
+; when it's done it points to the new environment.  What's interesting
+; is that the conslist head points to the last object initialized, not
+; the first.
 
 (define (extend env variables values) 
   (cond ((pair? variables)
@@ -84,12 +87,9 @@
              (wrong-syntax #'here "Too many values")))
         ((symbol? variables) (mcons (mcons variables values) env))))
                          
-; This is interesting.  Already we're starting to get some scope here.
-; Note that make function provides the environment, not the invoke.
-; But we're still only passing the empty init environment.
-
-; Now a different order, one in which closures aren't present, makes
-; the code fragile.  So:
+; Already we're starting to get some scope here.  Note that
+; make-function provides the environment, not the invoke.  This makes
+; this a lexically scoped interpreter.
 
 (define (make-function variables body env) 
   (lambda (values) 
@@ -101,12 +101,6 @@
   (if (procedure? fn)
       (fn args)
       (wrong-syntax #'here "Not an function ~s" fn)))
-
-; The text points out that the global environment is being
-; pushed/popped as needed and rebuilt with every function call.  In
-; this case, the defining envirnoment is no longer being used at all,
-; only the current one.  This would make this a dynamically scope
-; language, no?
 
 ; Iterate through the exps, return the value of the last one.
 
@@ -133,8 +127,7 @@
 (define-syntax mcadr (syntax-rules () ((_ e) (mcdr (mcar e)))))
 
 ; Iterate through the environment, find an ID, return its associated
-; value.  This is a completely global, resettable environment; we're
-; talking BASIC here.
+; value.
 
 (define (lookup id env)
   (if (mpair? env)
@@ -154,7 +147,7 @@
           (update! id (mcdr env) value))
       (wrong-syntax #'here "No such binding ~s" id)))
 
-; Different evaluation rules.
+; Core evaluation rules.
 
 (define (evaluate exp env)
   (if (atom? exp)
