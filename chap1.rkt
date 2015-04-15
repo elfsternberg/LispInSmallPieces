@@ -2,7 +2,13 @@
 ; with global environment, simple lexical closures enforced by singly
 ; linked lists.
 
-; This covers only one exercise: I added 'exit as an exit value.
+; This covers only severals exercise: I added 'exit as an exit value;
+; I fixed the definition of '<', and then applied the exercise out of 
+; the book.
+
+; Any of the exercises that needed call/cc I've avoided for the simple
+; reason that I started this to learn lisp, I'm a raw beginner, and 
+; call/cc is definitely advance estorics.
 
 ; Needed for 'wrong-syntax', which is Racket's version of the "wrong"
 ; exception tosser.
@@ -62,12 +68,17 @@
 (definitial fib)
 (definitial fact)
 
+(define-syntax defpredicate
+  (syntax-rules ()
+    ((_ name native arity)
+     (defprimitive name (lambda args (or (apply native args) the-false-value)) arity))))
+
 (defprimitive cons cons 2)
 (defprimitive car car 1)
 (defprimitive set-cdr! set-mcdr! 2)
 (defprimitive + + 2)
-(defprimitive < < 2)
-(defprimitive eq? eq? 2)
+(defpredicate lt < 2)
+(defpredicate eq? eq? 2)
 
 ; This function extends the environment so that *at this moment of
 ; extension* the conslist head points to the old environment, then
