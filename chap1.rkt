@@ -77,6 +77,8 @@
 (defprimitive car car 1)
 (defprimitive set-cdr! set-mcdr! 2)
 (defprimitive + + 2)
+(defprimitive - - 2)
+(defprimitive * * 2)
 (defpredicate lt < 2)
 (defpredicate eq? eq? 2)
 
@@ -135,7 +137,7 @@
 ; silly patch because of the mutatable lists
 
 (define-syntax mcaar (syntax-rules () ((_ e) (mcar (mcar e)))))
-(define-syntax mcadr (syntax-rules () ((_ e) (mcdr (mcar e)))))
+(define-syntax mcdar (syntax-rules () ((_ e) (mcdr (mcar e)))))
 
 ; Iterate through the environment, find an ID, return its associated
 ; value.
@@ -186,3 +188,5 @@
           (begin (display result) (toplevel))
           #f)))
   (toplevel))
+
+; (set! fact (lambda (x) (if (eq? x 0) 1 (* x (fact (- x 1))))))
