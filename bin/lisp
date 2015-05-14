@@ -1,0 +1,5 @@
+lisp = require '../lib/lisp'
+fs = require 'fs'
+{inspect} = require 'util'
+
+console.log lisp.run process.argv[2]

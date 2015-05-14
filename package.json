@@ -1,0 +1,26 @@
+{
+  "name": "CoffeeLisp",
+  "version": "0.0.1",
+  "description": "A Coffeescript rendition of Lisp In Small Pieces",
+  "main": "bin/lisp",
+  "dependencies": {
+    "coffee-script": "^1.9.1",
+    "git+https://github.com/elfsternberg/cons-lists.git"
+  },
+  "devDependencies": {
+    "chai": "^2.0.0",
+    "mocha": "^2.1.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "scheme",
+    "practice",
+    "interpreter",
+    "javascript",
+    "coffeescript"
+  ],
+  "author": "Elf M. Sternberg",
+  "license": "MIT"
+}
