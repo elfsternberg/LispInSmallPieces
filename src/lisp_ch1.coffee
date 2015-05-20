@@ -1,6 +1,8 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
+print = require "./print"
+
 
 env_init = nil
 env_global = env_init
@@ -55,12 +57,14 @@ extend = (env, variables, values) ->
   else
     if (symbolp variables)
       (cons (cons variables, values), env)
+    else
+      nil
 
 make_function = (variables, body, env) ->
   (values) -> eprogn body, (extend env, variables, values)
 
 invoke = (fn, args) ->
-  fn(args)
+  (fn args)
 
 # Takes a list of nodes and calls evaluate on each one, returning the
 # last one as the value of the total expression.  In this example, we
@@ -71,9 +75,11 @@ eprogn = (exps, env) ->
   if (pairp exps)
     if pairp (cdr exps)
       evaluate (car exps), env
-      return eprogn (cdr exps), env
-    return evaluate (car exps), env
-  nil
+      eprogn (cdr exps), env
+    else
+      evaluate (car exps), env
+  else
+    nil
 
 evlis = (exps, env) ->
   if (pairp exps)
@@ -104,8 +110,6 @@ update = (id, env, value) ->
 # interpreter core.  I can't help but think that this design precludes
 #  pluggable interpreter core.
 
-cadddr = metacadr("cadddr")
-
 astSymbolsToLispSymbols = (node) ->
   return nil if nilp node
   throw "Not a list of variable names" if not (ntype(node) is 'list')
@@ -118,16 +122,18 @@ astSymbolsToLispSymbols = (node) ->
 # Takes an AST node and evaluates it and its contents.  A node may be
 # ("list" (... contents ...)) or ("number" 42) or ("symbol" x), etc.
 
+cadddr = metacadr('cadddr')
+
 evaluate = (e, env) ->
   [type, exp] = [(ntype e), (nvalu e)]
   if type == "symbol"
     return lookup exp, env
-  if type in ["number", "string", "boolean", "vector"]
+  else if type in ["number", "string", "boolean", "vector"]
     return exp
-  if type == "list"
+  else if type == "list"
     head = car exp
     if (ntype head) == 'symbol'
-      return switch (nvalu head)
+      switch (nvalu head)
         when "quote" then cdr exp
         when "if"
           unless (evaluate (cadr exp), env) == the_false_value
@@ -137,9 +143,10 @@ evaluate = (e, env) ->
         when "begin" then eprogn (cdr exp), env
         when "set!" then update (nvalu cadr exp), env, (evaluate (caddr exp), env)
         when "lambda" then make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env
-        else
-          invoke (evaluate (car exp), env), (evlis (cdr exp), env)
-      return invoke (evaluate (car exp), env), (evlis (cdr exp), env)
-  throw new Error("Can't handle a #{type}")
+        else invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+    else
+      invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+  else
+    throw new Error("Can't handle a #{type}")
 
 module.exports = (c) -> evaluate c, env_global

@@ -3,6 +3,7 @@
 *~
 *.orig
 npm-debug.log
+package.yml
 node_modules/*
 tmp/
 test/
