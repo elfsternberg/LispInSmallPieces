@@ -1,4 +1,4 @@
-{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "./lists"
+{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
 
@@ -12,11 +12,11 @@ definitial = (name, value = nil) ->
   env_global = (cons (cons name, value), env_global)
   name
 
-defprimitive = (name, value, arity) ->
-  definitial name, ((values) ->
-    vvalues = listToVector(values)
-    if (vvalues.length == arity)
-      return value(vvalues)
+defprimitive = (name, nativ, arity) ->
+  definitial name, ((args) ->
+    vmargs = listToVector(args)
+    if (vmargs.length == arity)
+      nativ.apply null, vmargs
     else
       throw "Incorrect arity")
 
@@ -31,7 +31,7 @@ definitial "fib"
 definitial "fact"
 
 defpredicate = (name, nativ, arity) ->
-  defprimitive name, ((args) -> if (nativ.apply null, args) then true else the_false_value), arity
+  defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
 
 defprimitive "cons", cons, 2
 defprimitive "car", car, 2
@@ -60,7 +60,7 @@ make_function = (variables, body, env) ->
   (values) -> eprogn body, (extend env, variables, values)
 
 invoke = (fn, args) ->
-  (fn(args))
+  fn(args)
 
 # Takes a list of nodes and calls evaluate on each one, returning the
 # last one as the value of the total expression.  In this example, we
@@ -93,7 +93,7 @@ lookup = (id, env) ->
 update = (id, env, value) ->
   if (pairp env)
     if (caar env) == id
-      setcdr (car env), value
+      setcdr value, (car env)
       value
     else
       update id, (cdr env), value

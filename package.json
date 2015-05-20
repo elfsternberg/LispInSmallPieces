@@ -5,7 +5,7 @@
   "main": "bin/lisp",
   "dependencies": {
     "coffee-script": "^1.9.1",
-    "git+https://github.com/elfsternberg/cons-lists.git"
+    "cons-lists": "git+https://github.com/elfsternberg/cons-lists.git"
   },
   "devDependencies": {
     "chai": "^2.0.0",

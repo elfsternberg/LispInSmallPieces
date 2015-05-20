@@ -1,4 +1,4 @@
-{car, cdr, cons, nil, nilp, pairp, vectorToList} = require './lists'
+{car, cdr, cons, nil, nilp, pairp, vectorToList} = require 'cons-lists/lists'
 
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
 WHITESPACE = [" ", "\t"].concat(NEWLINES)
