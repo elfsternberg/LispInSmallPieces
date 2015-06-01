@@ -4,16 +4,22 @@ print = require "../chapter1/print"
 # Debugging tool.
 {inspect} = require "util"
 
-
 env_init = nil
 env_global = env_init
 
 ntype = (node) -> car node
 nvalu = (node) -> cadr node
 
+# Takes a name and a value and pushes those onto the global environment.
+
 definitial = (name, value = nil) ->
   env_global = (cons (cons name, value), env_global)
   name
+
+# Takes a name, a native function, and the expected arity of that
+# function, and returns the global environment with new a (native)
+# function perpared to unpack any (interpreter) variable pairs and
+# apply the (native) function with them.
 
 defprimitive = (name, nativ, arity) ->
   definitial name, ((args) ->
@@ -33,18 +39,26 @@ definitial "bar"
 definitial "fib"
 definitial "fact"
 
+# Wraps a native predicate in function to ensure the interpreter's
+# notion of falsity is preserved.
+
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
 
 defprimitive "cons", cons, 2
 defprimitive "car", car, 2
 defprimitive "set-cdr!", setcdr, 2
+defprimitive "log", ((a) -> console.log a), 1
 defprimitive "+", ((a, b) -> a + b), 2
 defprimitive "*", ((a, b) -> a * b), 2
 defprimitive "-", ((a, b) -> a - b), 2
 defprimitive "/", ((a, b) -> a / b), 2
 defpredicate "lt", ((a, b) -> a < b), 2
 defpredicate "eq?", ((a, b) -> a == b), 2
+
+# Takes an environment, a list of names and a list of values, and for
+# each name and value pair pushes that pair onto the list, adding them
+# to the environment.
 
 extend = (env, variables, values) ->
   if (pairp variables)
@@ -61,16 +75,24 @@ extend = (env, variables, values) ->
     else
       nil
 
+# Takes a list of variable names, a function body, and an environment
+# at the time of evaluation, and returns:
+# a (native) function that takes a list of values, applies them to the
+# environment, and evaluates the body, returning the resulting value.
+
 make_function = (variables, body, env) ->
   (values) -> eprogn body, (extend env, variables, values)
 
-invoke = (fn, args) ->
-  (fn args)
+# Evaluates a (native) function with of one arg with the arg provided.
+# Invoke runs the functions created by make_function, and is unrelated
+# to the native functions of defprimitive()
+
+invoke = (fn, arg) -> (fn arg)
 
 # Takes a list of nodes and calls evaluate on each one, returning the
 # last one as the value of the total expression.  In this example, we
-# are hard-coding what ought to be a macro, namely the threading
-# macros, "->"
+# are hard-coding what ought to be a macro, namely the threading macro
+# often named "->"
 
 eprogn = (exps, env) ->
   if (pairp exps)
@@ -82,12 +104,17 @@ eprogn = (exps, env) ->
   else
     nil
 
+# Evaluates a list of expressions and returns a list of resolved
+# values.
+
 evlis = (exps, env) ->
   if (pairp exps)
     (cons (evaluate (car exps), env), (evlis (cdr exps), env))
   else
     nil
-    
+
+# Locates a named reference in the environment and returns its value.
+            
 lookup = (id, env) ->
   if (pairp env)
     if (caar env) == id
@@ -96,6 +123,9 @@ lookup = (id, env) ->
       lookup id, (cdr env)
   else
     nil
+
+# Locates a named reference in the environment and replaces its value
+# with a new value.
 
 update = (id, env, value) ->
   if (pairp env)
@@ -120,8 +150,9 @@ astSymbolsToLispSymbols = (node) ->
   handler(nvalu node)
   
 
-# Takes an AST node and evaluates it and its contents.  A node may be
-# ("list" (... contents ...)) or ("number" 42) or ("symbol" x), etc.
+# Takes an AST node and evaluates it and its contents, returning the
+# final value of the calculation.  A node may be ("list" (... contents
+# ...)) or ("number" 42) or ("symbol" x), etc.
 
 cadddr = metacadr('cadddr')
 
