@@ -149,7 +149,6 @@ evaluate = (e, env, continuation) ->
         when "lambda"
           make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env, continuation
         else
-          console.log(cdr exp)
           evlis (cdr exp), env, (args) ->
             evaluate (car exp), env, (fn) ->
               invoke fn, args, continuation

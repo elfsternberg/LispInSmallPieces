@@ -2,17 +2,25 @@ chai = require 'chai'
 chai.should()
 expect = chai.expect 
 
+{cons} = require "cons-lists/lists"
 lisp = require '../chapter1/interpreter'
 {read, readForms} = require '../chapter1/reader'
 
+the_false_value = (cons "false", "boolean")
+
 describe "Core interpreter", ->
-  it "Should handle if statements", ->
+  it "Should handle true statements", ->
     expect(lisp read "(begin (if (lt 0 1) #t #f))").to.equal(true)
-    expect(lisp read "(begin (if (lt 1 0) #t #f))").to.equal(false)
-    expect(lisp read '(begin (if (lt 1 0) "y" "n"))').to.equal("n")
+  it "Should handle false statements", ->
+    expect(lisp read "(begin (if (lt 1 0) #t #f))").to.deep.equal(the_false_value)
+  it "Should handle return strings", ->
     expect(lisp read '(begin (if (lt 0 1) "y" "n"))').to.equal("y")
-    expect(lisp read '(begin (if (eq "y" "y") "y" "n"))').to.equal("y")
-    expect(lisp read '(begin (if (eq "y" "x") "y" "n"))').to.equal("n")
+  it "Should handle return strings when false", ->
+    expect(lisp read '(begin (if (lt 1 0) "y" "n"))').to.equal("n")
+  it "Should handle equivalent objects that are not intrinsically truthy", ->
+    expect(lisp read '(begin (if (eq? "y" "y") "y" "n"))').to.equal("y")
+  it "Should handle inequivalent objects that are not intrinsically truthy", ->
+    expect(lisp read '(begin (if (eq? "y" "x") "y" "n"))').to.equal("n")
       
   it "Should handle basic arithmetic", ->
     expect(lisp read '(begin (+ 5 5))').to.equal(10)
@@ -21,7 +29,7 @@ describe "Core interpreter", ->
     expect(lisp read '(begin (- 9 5))').to.equal(4)
 
   it "Should handle some algebra", ->
-    expect(lisp read '(begin (* (+ 5 5) (* 2 3))').to.equal(60)
+    expect(lisp read '(begin (* (+ 5 5) (* 2 3)))').to.equal(60)
 
   it "Should handle a basic setting", ->
     expect(lisp read '(begin (set! fact 4) fact)').to.equal(4)

@@ -1,0 +1,139 @@
+<testsuites name="Mocha Tests">
+<testsuite name="Core interpreter" tests="13" failures="2" skipped="0" timestamp="Wed, 17 Jun 2015 22:28:41 GMT" time="0.1">
+<testcase classname="Core interpreter" name="Should handle true statements" time="0.004"/>
+<testcase classname="Core interpreter" name="Should handle false statements" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle return strings" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle return strings when false" time="0"/>
+<testcase classname="Core interpreter" name="Should handle equivalent objects that are not intrinsically truthy" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle inequivalent objects that are not intrinsically truthy" time="0"/>
+<testcase classname="Core interpreter" name="Should handle basic arithmetic" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle some algebra" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle a basic setting" time="0"/>
+<testcase classname="Core interpreter" name="Should handle a zero arity thunk" time="0.001">
+<failure message="Cannot read property &#39;1&#39; of undefined">
+  at nvalu (chapter1/interpreter.coffee:11:19)
+  at handler (chapter1/interpreter.coffee:118:11)
+  at astSymbolsToLispSymbols (chapter1/interpreter.coffee:119:3)
+  at evaluate (chapter1/interpreter.coffee:145:43)
+  at evaluate (chapter1/interpreter.coffee:144:57)
+  at eprogn (chapter1/interpreter.coffee:77:7)
+  at evaluate (chapter1/interpreter.coffee:143:27)
+  at module.exports (chapter1/interpreter.coffee:152:25)
+  at Context.&lt;anonymous&gt; (test/test_chapter1.coffee:38:12)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle a two arity thunk" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle a recursive function" time="0.001"/>
+<testcase classname="Core interpreter" name="Should handle an IIFE" time="0">
+<failure message="Cannot read property &#39;1&#39; of undefined">
+  at nvalu (chapter1/interpreter.coffee:11:19)
+  at handler (chapter1/interpreter.coffee:118:11)
+  at astSymbolsToLispSymbols (chapter1/interpreter.coffee:119:3)
+  at evaluate (chapter1/interpreter.coffee:145:43)
+  at evaluate (chapter1/interpreter.coffee:148:15)
+  at eprogn (chapter1/interpreter.coffee:80:7)
+  at evaluate (chapter1/interpreter.coffee:143:27)
+  at module.exports (chapter1/interpreter.coffee:152:25)
+  at Context.&lt;anonymous&gt; (test/test_chapter1.coffee:47:12)
+
+</failure>
+</testcase>
+</testsuite>
+<testsuite name="Core interpreter" tests="8" failures="6" skipped="0" timestamp="Wed, 17 Jun 2015 22:28:41 GMT" time="0.103">
+<testcase classname="Core interpreter" name="Should handle if statements" time="0.003">
+<failure message="expected [ &#39;false&#39;, &#39;boolean&#39;, __list: true ] to equal false">
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:11:56)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle basic arithmetic" time="0"/>
+<testcase classname="Core interpreter" name="Should handle some algebra" time="0">
+<failure message="Can&#39;t handle a e">
+  at evaluate (chapter3/interpreter.coffee:160:15)
+  at eprogn (chapter3/interpreter.coffee:77:7)
+  at evaluate (chapter3/interpreter.coffee:146:27)
+  at module.exports (chapter3/interpreter.coffee:162:39)
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:24:12)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle a basic setting" time="0.001">
+<failure message="continuation is not a function">
+  at lookup (chapter3/interpreter.coffee:95:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at lookup (chapter3/interpreter.coffee:97:7)
+  at evaluate (chapter3/interpreter.coffee:134:12)
+  at eprogn (chapter3/interpreter.coffee:80:7)
+  at chapter3/interpreter.coffee:78:9
+  at update (chapter3/interpreter.coffee:105:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at update (chapter3/interpreter.coffee:107:7)
+  at chapter3/interpreter.coffee:148:11
+  at evaluate (chapter3/interpreter.coffee:132:12)
+  at evaluate (chapter3/interpreter.coffee:147:26)
+  at eprogn (chapter3/interpreter.coffee:77:7)
+  at evaluate (chapter3/interpreter.coffee:146:27)
+  at module.exports (chapter3/interpreter.coffee:162:39)
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:27:12)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle a zero arity thunk" time="0.001">
+<failure message="Cannot read property &#39;1&#39; of undefined">
+  at nvalu (chapter3/interpreter.coffee:11:19)
+  at handler (chapter3/interpreter.coffee:120:11)
+  at astSymbolsToLispSymbols (chapter3/interpreter.coffee:121:3)
+  at evaluate (chapter3/interpreter.coffee:150:26)
+  at evaluate (chapter3/interpreter.coffee:147:26)
+  at eprogn (chapter3/interpreter.coffee:77:7)
+  at evaluate (chapter3/interpreter.coffee:146:27)
+  at module.exports (chapter3/interpreter.coffee:162:39)
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:30:12)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle a two arity thunk" time="0"/>
+<testcase classname="Core interpreter" name="Should handle a recursive function" time="0.001">
+<failure message="expected [ &#39;false&#39;, &#39;boolean&#39;, __list: true ] to equal 120">
+Index: string
+===================================================================
+--- string
++++ string
+
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:36:108)
+
+</failure>
+</testcase>
+<testcase classname="Core interpreter" name="Should handle an IIFE" time="0">
+<failure message="Cannot read property &#39;1&#39; of undefined">
+  at nvalu (chapter3/interpreter.coffee:11:19)
+  at handler (chapter3/interpreter.coffee:120:11)
+  at astSymbolsToLispSymbols (chapter3/interpreter.coffee:121:3)
+  at evaluate (chapter3/interpreter.coffee:150:26)
+  at chapter3/interpreter.coffee:157:9
+  at evlis (chapter3/interpreter.coffee:90:5)
+  at evaluate (chapter3/interpreter.coffee:156:7)
+  at eprogn (chapter3/interpreter.coffee:80:7)
+  at evaluate (chapter3/interpreter.coffee:146:27)
+  at module.exports (chapter3/interpreter.coffee:162:39)
+  at Context.&lt;anonymous&gt; (test/test_chapter3.coffee:39:12)
+
+</failure>
+</testcase>
+</testsuite>
+</testsuites>
