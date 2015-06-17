@@ -19,9 +19,7 @@ node_modules: package.json
 	npm install
 
 test: node_modules
-	@JUNIT_REPORT_PATH=report.xml JUNIT_REPORT_STACK=1 ./node_modules/.bin/mocha \
-		--reporter mocha-jenkins-reporter --compilers coffee:coffee-script/register || true
-# @node_modules/.bin/mocha 
+	@./node_modules/.bin/mocha --recursive -R xunit test/ > test-reports.xml
 
 clean: 
 	rm -f $(targets)
