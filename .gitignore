@@ -7,3 +7,8 @@ package.yml
 node_modules/*
 tmp/
 test/
+bin/_mocha
+bin/mocha
+bin/coffee
+bin/cake
+

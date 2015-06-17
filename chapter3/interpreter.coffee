@@ -1,41 +1,18 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
+readline = require "readline"
+{inspect} = require "util"
 print = require "../chapter1/print"
 
-cadddr = metacadr('cadddr')
-
-{inspect} = require "util"
-
-cpsdecorate = (fn) ->
-  (args...) ->
-    callback = args[args.length - 1]
-    tocall = args[0 ... (args.length-1)]
-    callback fn.apply(@, args)
-
-ntype = (node) -> car node
-nvalu = (node) -> cadr node
-
-[listToString, listToVector, pairp, cons, car, cdr,
- caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp,
- nil, setcdr, metacadr, ntype, nvalu] = [listToString, 
- listToVector, pairp, cons, car, cdr, caar, cddr, 
- cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, 
- metacadr, ntype, nvalu].map(cpsdecorate)
-
-# Debugging tool.
 
 env_init = nil
 env_global = env_init
 
-# Takes a name and a value and pushes those onto the global environment.
+ntype = (node) -> car node
+nvalu = (node) -> cadr node
 
-definitial = (name, value = nil, callback) ->
-  cons name, value, (ls) ->
-    cons ls, env_global, callback
-
-# Takes a name, a native function, and the expected arity of that
-# function, and returns the global environment with new a (native)
-# function perpared to unpack any (interpreter) variable pairs and
-# apply the (native) function with them.
+definitial = (name, value = nil) ->
+  env_global = (cons (cons name, value), env_global)
+  name
 
 defprimitive = (name, nativ, arity) ->
   definitial name, ((args) ->
@@ -55,26 +32,18 @@ definitial "bar"
 definitial "fib"
 definitial "fact"
 
-# Wraps a native predicate in function to ensure the interpreter's
-# notion of falsity is preserved.
-
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
 
 defprimitive "cons", cons, 2
 defprimitive "car", car, 2
 defprimitive "set-cdr!", setcdr, 2
-defprimitive "log", ((a) -> console.log a), 1
 defprimitive "+", ((a, b) -> a + b), 2
 defprimitive "*", ((a, b) -> a * b), 2
 defprimitive "-", ((a, b) -> a - b), 2
 defprimitive "/", ((a, b) -> a / b), 2
 defpredicate "lt", ((a, b) -> a < b), 2
 defpredicate "eq?", ((a, b) -> a == b), 2
-
-# Takes an environment, a list of names and a list of values, and for
-# each name and value pair pushes that pair onto the list, adding them
-# to the environment.
 
 extend = (env, variables, values) ->
   if (pairp variables)
@@ -91,66 +60,51 @@ extend = (env, variables, values) ->
     else
       nil
 
-# Takes a list of variable names, a function body, and an environment
-# at the time of evaluation, and returns:
-# a (native) function that takes a list of values, applies them to the
-# environment, and evaluates the body, returning the resulting value.
+make_function = (variables, body, env, continuation) ->
+  continuation (values, cb) -> eprogn body, (extend env, variables, values), cb
 
-make_function = (variables, body, env) ->
-  (values) -> eprogn body, (extend env, variables, values)
-
-# Evaluates a (native) function with of one arg with the arg provided.
-# Invoke runs the functions created by make_function, and is unrelated
-# to the native functions of defprimitive()
-
-invoke = (fn, arg) -> (fn arg)
+invoke = (fn, args, cb) ->
+  fn args, cb
 
 # Takes a list of nodes and calls evaluate on each one, returning the
 # last one as the value of the total expression.  In this example, we
-# are hard-coding what ought to be a macro, namely the threading macro
-# often named "->"
+# are hard-coding what ought to be a macro, namely the threading
+# macros, "->"
 
-eprogn = (exps, env, callback) ->
+eprogn = (exps, env, cb) ->
   if (pairp exps)
     if pairp (cdr exps)
-      evaluate (car exps), env, (c) ->
-        eprogn (cdr exps), env, callback
+      evaluate (car exps), env, (next) ->
+        eprogn (cdr exps), env, cb
     else
-      evaluate (car exps), env, callback
+      evaluate (car exps), env, cb
   else
-    nil
+    cb nil
 
-# Evaluates a list of expressions and returns a list of resolved
-# values.
-
-evlis = (exps, env, callback) ->
-  callback if (pairp exps)
-    if (pairp cdr exps)
-      evaluate  (cons (evaluate (car exps), env), (evlis (cdr exps), env))
+evlis = (exps, env, cb) ->
+  if (pairp exps)
+    evaluate (car exps), env, (stepv) ->
+      evlis (cdr exps), env, (next) ->
+        cb cons stepv, next
   else
-    nil
-
-# Locates a named reference in the environment and returns its value.
-            
-lookup = (id, env, callback) ->
-  callback if (pairp env)
+    cb(nil)
+    
+lookup = (id, env, continuation) ->
+  if (pairp env)
     if (caar env) == id
-      cdar env
+      continuation (cdar env)
     else
-      lookup id, (cdr env)
+      lookup id, (cdr env), continuation
   else
-    nil
+    continuation nil
 
-# Locates a named reference in the environment and replaces its value
-# with a new value.
-
-update = (id, env, value, callback ) ->
-  callback if (pairp env)
+update = (id, env, value, callback) ->
+  if (pairp env)
     if (caar env) == id
       setcdr value, (car env)
-      value
+      callback value
     else
-      update id, (cdr env), value
+      update id, (cdr env), value, callback
   else
     nil
 
@@ -158,70 +112,52 @@ update = (id, env, value, callback ) ->
 # interpreter core.  I can't help but think that this design precludes
 #  pluggable interpreter core.
 
-# Yeah, for the CPS edition, this is WAY cheating:
-
-astSymbolsToLispSymbols = (node, callback) ->
+astSymbolsToLispSymbols = (node) ->
   return nil if nilp node
   throw "Not a list of variable names" if not (ntype(node) is 'list')
   handler = (node) ->
     return nil if nilp node
     cons (nvalu car node), (handler cdr node)
-  callback handler(nvalu node)
+  handler(nvalu node)
   
 
-# Takes an AST node and evaluates it and its contents, returning the
-# final value of the calculation.  A node may be ("list" (... contents
-# ...)) or ("number" 42) or ("symbol" x), etc.
+# Takes an AST node and evaluates it and its contents.  A node may be
+# ("list" (... contents ...)) or ("number" 42) or ("symbol" x), etc.
 
+cadddr = metacadr('cadddr')
 
-ceq = (l, r, thencallback, elsecallback) ->
-  (if l is r then thencallback else elsecallback)()
+evaluate = (e, env, continuation) ->
+  [type, exp] = [(ntype e), (nvalu e)]
+  if type in ["number", "string", "boolean", "vector"]
+    return continuation exp
+  else if type == "symbol"
+    return lookup exp, env, continuation
+  else if type == "list"
+    head = car exp
+    if (ntype head) == 'symbol'
+      switch (nvalu head)
+        when "quote" then continuation cdr exp
+        when "if"
+          evaluate (cadr exp), env, (result) ->
+            unless result == the_false_value
+              evaluate (caddr exp), env, continuation
+            else
+              evaluate (cadddr exp), env, continuation
+        when "begin" then eprogn (cdr exp), env, continuation
+        when "set!" then evaluate (caddr exp), env, (value) ->
+          update (nvalu cadr exp), env, value, continuation
+        when "lambda"
+          make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env, continuation
+        else
+          console.log(cdr exp)
+          evlis (cdr exp), env, (args) ->
+            evaluate (car exp), env, (fn) ->
+              invoke fn, args, continuation
+    else
+      evlis (cdr exp), env, (args) ->
+        evaluate (car exp), env, (fn) ->
+          invoke fn, args, continuation
+  else
+    throw new Error("Can't handle a #{type}")
 
-cin = (l, r, thencallback, elsecallback) ->
-  (if l in r then thencallback else elsecallback)()
-
-cswitch = (key, ops, callback) ->
-  return ops[key](callback) if key of ops
-  return ops['_default'](callback) if '_default' of ops
-  throw new Error("Can't handle invocation of #{key}")  
-
-cpsevaluate = (exp, env, callback) ->
-  cdr exp, (envexp) ->
-    evlis envexp, env, (newenv) ->
-      car exp, (fnhandle) ->
-        evaluate fnhandle, env, callback
-
-syntax =
-  "quote": (callback) -> cdr exp, callback
-  "if": (callback) ->
-    cadr exp, (e) ->
-      evaluate e, env, (c) ->
-        cif(c, the_false_value, 
-          (-> cadddr exp, (e) -> evaluate e, env, callback),
-          (-> caddr exp, (e) -> evaluate e, env, callback))
-  "begin": (callback) -> cdr exp, ((e) -> eprogn e, env, callback)
-  "set!": (callback) -> cadr exp, (e) ->
-    nvalu e, (n) ->
-      caddr exp, (r) ->
-        evaluate r, env, (r2) ->
-          update n, env, r2, callback
-  "lambda": (callback) -> cddr expr, (body) ->
-    cadr exp, (astSymbols) ->
-      astSymbolsToLispSymbols astSymbols, (lispSymbols) ->
-        make_function lispSymbols, body, env, callback
-  "_default": (callback) -> cpsevaluate exp, env, callback
-
-evaluate = (e, env, callback) ->
-  ntype e, (type) ->
-    nvalu e, (exp) ->
-      ceq type, "symbol", (-> lookup exp, env, callback), ->
-        cin type, ["number", "string", "boolean", "vector"], (-> callback exp), (->
-          ceq type, "list", (->
-            car exp, (head) ->
-              ntype head, (h) -> ceq h, "symbol", -> nvalu head, (hv) ->
-                cswitch hv, syntax, callback
-              ), -> cpsevaluate exp, env, callback
-          ), ->  throw new Error("Can't handle a #{type}")
-
-module.exports = (c) -> evaluate c, env_global
-
+module.exports = (c, continuation) -> evaluate c, env_global, continuation
