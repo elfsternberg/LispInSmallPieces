@@ -5,7 +5,7 @@ expect = chai.expect
 lisp = require '../chapter3/interpreter'
 {read, readForms} = require '../chapter1/reader'
 
-describe "Core interpreter", ->
+describe "Core interpreter #3", ->
   it "Should handle if statements", ->
     expect(lisp read "(begin (if (lt 0 1) #t #f))").to.equal(true)
     expect(lisp read "(begin (if (lt 1 0) #t #f))").to.equal(false)

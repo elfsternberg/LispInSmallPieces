@@ -8,7 +8,7 @@ lisp = require '../chapter1/interpreter'
 
 the_false_value = (cons "false", "boolean")
 
-describe "Core interpreter", ->
+describe "Core interpreter #1", ->
   it "Should handle true statements", ->
     expect(lisp read "(begin (if (lt 0 1) #t #f))").to.equal(true)
   it "Should handle false statements", ->
