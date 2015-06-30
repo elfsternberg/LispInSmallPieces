@@ -1,4 +1,6 @@
-{car, cdr, cons, nil, nilp, pairp, vectorToList} = require 'cons-lists/lists'
+{car, cdr, cons, nil, nilp, pairp, vectorToList, list} = require 'cons-lists/lists'
+{inspect} = require "util"
+
 
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
 WHITESPACE = [" ", "\t"].concat(NEWLINES)
@@ -32,7 +34,7 @@ skipWS = (inStream) ->
 
 # (type, value, line, column) -> (node {type, value, line, column)}
 makeObj = (type, value, line, column) ->
-  cons(type, cons(value, cons(line, cons(column, nil))))
+  list(type, value, line, column)
 
 # msg -> (IO -> Node => Error)
 handleError = (message) ->

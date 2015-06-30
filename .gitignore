@@ -10,4 +10,4 @@ bin/_mocha
 bin/mocha
 bin/coffee
 bin/cake
-
+./test-reports.xml

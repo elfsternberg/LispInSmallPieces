@@ -3,7 +3,6 @@ readline = require "readline"
 {inspect} = require "util"
 print = require "../chapter1/print"
 
-
 env_init = nil
 env_global = env_init
 
@@ -15,10 +14,10 @@ definitial = (name, value = nil) ->
   name
 
 defprimitive = (name, nativ, arity) ->
-  definitial name, ((args) ->
+  definitial name, ((args, callback) ->
     vmargs = listToVector(args)
     if (vmargs.length == arity)
-      nativ.apply null, vmargs
+      callback nativ.apply null, vmargs
     else
       throw "Incorrect arity")
 
@@ -60,43 +59,43 @@ extend = (env, variables, values) ->
     else
       nil
 
-make_function = (variables, body, env, continuation) ->
-  continuation (values, cb) -> eprogn body, (extend env, variables, values), cb
+make_function = (variables, body, env, callback) ->
+  callback (values) -> eprogn body, (extend env, variables, values)
 
-invoke = (fn, args, cb) ->
-  fn args, cb
+invoke = (fn, args, callback) ->
+  fn args, callback
 
 # Takes a list of nodes and calls evaluate on each one, returning the
 # last one as the value of the total expression.  In this example, we
 # are hard-coding what ought to be a macro, namely the threading
 # macros, "->"
 
-eprogn = (exps, env, cb) ->
+eprogn = (exps, env, callback) ->
   if (pairp exps)
     if pairp (cdr exps)
       evaluate (car exps), env, (next) ->
-        eprogn (cdr exps), env, cb
+        eprogn (cdr exps), env, callback
     else
-      evaluate (car exps), env, cb
+      evaluate (car exps), env, callback
   else
-    cb nil
+    callback nil
 
-evlis = (exps, env, cb) ->
+evlis = (exps, env, callback) ->
   if (pairp exps)
-    evaluate (car exps), env, (stepv) ->
-      evlis (cdr exps), env, (next) ->
-        cb cons stepv, next
+    evlis (cdr exps), env, (rest) ->
+      evaluate (car exps), env, (calc) ->
+        callback cons calc, rest
   else
-    cb(nil)
+    callback nil
     
-lookup = (id, env, continuation) ->
+lookup = (id, env) ->
   if (pairp env)
     if (caar env) == id
-      continuation (cdar env)
+      cdar env
     else
-      lookup id, (cdr env), continuation
+      lookup id, (cdr env)
   else
-    continuation nil
+    nil
 
 update = (id, env, value, callback) ->
   if (pairp env)
@@ -106,7 +105,7 @@ update = (id, env, value, callback) ->
     else
       update id, (cdr env), value, callback
   else
-    nil
+    callback nil
 
 # This really ought to be the only place where the AST meets the
 # interpreter core.  I can't help but think that this design precludes
@@ -126,37 +125,38 @@ astSymbolsToLispSymbols = (node) ->
 
 cadddr = metacadr('cadddr')
 
-evaluate = (e, env, continuation) ->
+evaluate = (e, env, callback) ->
   [type, exp] = [(ntype e), (nvalu e)]
-  if type in ["number", "string", "boolean", "vector"]
-    return continuation exp
-  else if type == "symbol"
-    return lookup exp, env, continuation
+  if type == "symbol"
+    return callback lookup exp, env
+  else if type in ["number", "string", "boolean", "vector"]
+    return callback exp
   else if type == "list"
     head = car exp
     if (ntype head) == 'symbol'
-      switch (nvalu head)
-        when "quote" then continuation cdr exp
+      return switch (nvalu head)
+        when "quote"
+          callback cdr exp
         when "if"
-          evaluate (cadr exp), env, (result) ->
-            unless result == the_false_value
-              evaluate (caddr exp), env, continuation
-            else
-              evaluate (cadddr exp), env, continuation
-        when "begin" then eprogn (cdr exp), env, continuation
-        when "set!" then evaluate (caddr exp), env, (value) ->
-          update (nvalu cadr exp), env, value, continuation
+          evaluate (cadr exp), env, (res) ->
+            w = unless res == the_false_value then caddr else cadddr
+            evaluate (w exp), env, callback
+        when "begin"
+          eprogn (cdr exp), env, callback
+        when "set!"
+          evaluate (caddr exp), env, (newvalue) ->
+            update (nvalu cadr exp), env, newvalue, callback
         when "lambda"
-          make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env, continuation
+          make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env, callback
         else
-          evlis (cdr exp), env, (args) ->
-            evaluate (car exp), env, (fn) ->
-              invoke fn, args, continuation
+          evaluate (car exp), env, (fn) ->
+            evlis (cdr exp), env, (args) ->
+              invoke fn, args, callback
     else
-      evlis (cdr exp), env, (args) ->
-        evaluate (car exp), env, (fn) ->
-          invoke fn, args, continuation
+      evaluate (car exp), env, (fn) ->
+        evlis (cdr exp), env, (args) ->
+          invoke fn, args, callback
   else
     throw new Error("Can't handle a #{type}")
 
-module.exports = (c, continuation) -> evaluate c, env_global, continuation
+module.exports = (c, cb) -> evaluate c, env_global, cb
