@@ -60,7 +60,7 @@ extend = (env, variables, values) ->
       nil
 
 make_function = (variables, body, env, callback) ->
-  callback (values) -> eprogn body, (extend env, variables, values)
+  callback (values, cb) -> eprogn body, (extend env, variables, values), cb
 
 invoke = (fn, args, callback) ->
   fn args, callback
