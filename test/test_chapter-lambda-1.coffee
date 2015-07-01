@@ -3,7 +3,7 @@ chai.should()
 expect = chai.expect 
 
 {cons} = require "cons-lists/lists"
-olisp = require '../chapter3/interpreter'
+olisp = require '../chapter-lambda-1/interpreter'
 {read, readForms} = require '../chapter1/reader'
 
 the_false_value = (cons "false", "boolean")
