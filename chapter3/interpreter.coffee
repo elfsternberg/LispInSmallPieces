@@ -3,6 +3,173 @@ readline = require "readline"
 {inspect} = require "util"
 print = require "./print"
 
+class Value
+
+class Environment
+
+class Continuation
+  constructor: (@k) ->
+
+class NullEnv extends Environment
+  lookup: -> throw "Unknown variable"
+  update: -> throw "Unknown variable"
+  
+class FullEnv extends Environment
+  constructor: (@others, @name) ->
+  lookup: (name, kont) ->
+    @others.lookup name, kont
+  update: (name, kont, value) ->
+    @others.update name, kont, value
+
+class VariableEnv extends FullEnv
+  constructor: (@others, @name, @value) ->
+    lookup: (name, kont) ->
+      if name == @name
+        resume kont, @value
+      else
+        @others.lookup name, kont
+    update: (nam, kont, value) ->
+      if name == @name
+        @value = value
+        resume kont, value
+      else
+        @others.update name, kont, value
+
+# QUOTE
+
+evaluateQuote = (v, env, kont) ->
+  resume kont, v
+
+# IF    
+
+evaluateIf = (exps, env, kont) ->
+  evaluate (car e), env, new IfCont(kont, (cadr e), (caddr e), env)
+
+class IfCont extends Continuation
+  constructor: (@k, @ift, @iff, @env) ->
+  resume: (v) -> evaluate (if v then @ift else @iff), @env, @k
+
+# BEGIN
+
+evaluateBegin = (exps, env, kont) ->
+  if (pairp exps)
+    if pairp (cdr exps)
+      evaluate (car exps), env, (new BeginCont kont, exps, env)
+    else
+      evaluate (car exps), env, kont
+  else
+    resume kont, "Begin empty value"
+
+class BeginCont extends Continuation
+  constructor: (@k, @exps, @env) ->
+  resume: (v) -> evaluateBegin (cdr @exps), @env, @k
+
+# VARIABLE
+
+evaluateVariable = (name, env, kont) ->
+  env.lookup(name, kont)
+
+# SET
+
+evaluateSet = (name, exp, env, kont) ->
+  evaluate exp, env, (new setCont(kont, name, env)) 
+
+class SetCont extend Continuation
+  constructor: (@k, @name, @env) ->
+  resume: (value) ->
+    update @env, @name, @k, value
+
+# LAMBDA
+
+evaluateLambda = (name, exp, env, kont) ->
+  resume kont, new Function names, exp, env
+
+class Function extends Value
+  constructor: (@variables, @body, @env) ->
+  invoke: (values, env, kont) ->
+    evaluateBegin @body, (extend @env, @variables, values), kont
+
+extend = (env, names, values) ->
+  if (pairp names) and (pairp values)
+    new VariableEnv (extend env (cdr names) (cdr values)), (car names), (car values)
+  else if (nilp names)
+    if (nilp values) then env else throw "Arity mismatch"
+  else
+    new VariableEnv env, names, values
+
+# APPLICATION
+
+evaluateApplication = (exp, exps, env, kont) ->
+  evaluate exp, env, (new EvFunCont kont, exps, env)
+
+class EvFunCont extends Continuation
+  constructor: (@k, @exp, @env) ->
+  resume: (f) ->
+    evaluateArguments (@exp, @k, new ApplyCont @k, f, @env)
+
+evaluateArguments = (exp, env, kont) ->
+  if (pairp exp)
+    evaluate (car exp), env, (new ArgumentCont kont, exp, env)
+  else
+    resume kont, "No more arguments"
+
+class ApplyCont extends Continuation
+  constructor: (@k, @fn, @env) ->
+  resume: (v) ->
+    invoke @fn, v, @env, @k
+    
+class ArgumentCont extends Continuation
+  constructor: (@k, @exp, @env) ->
+  resume: (v) ->
+    evaluateArguments (cdr @env, @env, new GatherCont @k, v)
+
+class GatherCont extends Continuation
+  constructor: (@k, @v) ->
+  resume: (v) ->
+     @k.resume (cons @v, v)
+    
+class BottomCont extends Continuation
+  constructor: (@k, @f) ->
+  resume: (v) ->
+    @f(v)
+    
+class Primitive extends Value
+  constructor: (@name, @address) ->
+    
+
+
+
+
+evaluate = (e, env, kont) ->
+  [type, exp] = [(ntype e), (nvalu e)]
+  if type == "symbol"
+    return variables.evaluate exp, env, kont
+
+  if type in ["number", "string", "boolean", "vector"]
+    return exp
+
+  if type == "list"
+    head = car exp
+    if (ntype head) == 'symbol'
+      switch (nvalu head)
+        when "quote" then resume (cdr exp), kont
+        when "if" then evaluateIf (cdr exp), env, kont
+
+          evaluate (cadr e), env, new Ifs((-> (caddr e)), (->(cadddr e)), env, kont)
+        when "begin" then eprogn (cdr exp), env
+        when "set!" then update (nvalu cadr exp), env, (evaluate (caddr exp), env)
+        when "lambda" then make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env
+        else invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+    else
+      invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+  else
+    throw new Error("Can't handle a #{type}")
+
+class Ifs:
+  evaluate: (cond, pass, alt, env, kont) ->
+    if cond then 
+
+  resume: (
 
 env_init = nil
 env_global = env_init
@@ -44,6 +211,13 @@ defprimitive "-", ((a, b) -> a - b), 2
 defprimitive "/", ((a, b) -> a / b), 2
 defpredicate "lt", ((a, b) -> a < b), 2
 defpredicate "eq?", ((a, b) -> a == b), 2
+
+
+
+
+
+
+
 
 extend = (env, variables, values) ->
   if (pairp variables)
@@ -124,29 +298,27 @@ astSymbolsToLispSymbols = (node) ->
 
 cadddr = metacadr('cadddr')
 
-evaluate = (e, env) ->
-  [type, exp] = [(ntype e), (nvalu e)]
-  if type == "symbol"
-    return lookup exp, env
-  else if type in ["number", "string", "boolean", "vector"]
-    return exp
-  else if type == "list"
-    head = car exp
-    if (ntype head) == 'symbol'
-      switch (nvalu head)
-        when "quote" then cdr exp
-        when "if"
-          unless (evaluate (cadr exp), env) == the_false_value
-            evaluate (caddr exp), env
-          else
-            evaluate (cadddr exp), env
-        when "begin" then eprogn (cdr exp), env
-        when "set!" then update (nvalu cadr exp), env, (evaluate (caddr exp), env)
-        when "lambda" then make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env
-        else invoke (evaluate (car exp), env), (evlis (cdr exp), env)
-    else
-      invoke (evaluate (car exp), env), (evlis (cdr exp), env)
-  else
-    throw new Error("Can't handle a #{type}")
+class Component
+  invoke: -> throw "Not a function"
+
+class Environment
+  lookup: -> throw "Not an environment"
+
+class NullEnv extends Environment
+  lookup: -> throw "Unknown Variable"
+  
+class FullEnv extends Environment
+  constructor: (@others, @name) ->
+  lookup: (id) -> lookup id, @others
+
+class VariableEnv extends FullEnv
+  constructor:(@others, @name, @value) ->
+  lookup: (id) ->
+
+class Primitive extends Invokable
+  invoke: (args, kont) -> @fn args, kont
+
+
+
 
 module.exports = (c) -> evaluate c, env_global
