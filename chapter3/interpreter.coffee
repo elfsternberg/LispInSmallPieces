@@ -12,7 +12,7 @@ class Continuation
   constructor: (@k) ->
   invoke: (v, env, kont) ->
     if nilp cdr v
-      resume @k, (car v)
+      @k.resume (car v)
     else
       throw "Continuations expect one argument", [v, env, kont]
 
@@ -200,6 +200,9 @@ defprimitive = (name, nativ, arity) ->
     else
       throw "Incorrect arity")
 
+defpredicate = (name, nativ, arity) ->
+  defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
+
 the_false_value = (cons "false", "boolean")
 
 definitial "#t", true
@@ -210,9 +213,6 @@ for i in [
   "fib", "fact", "visit", "primes", "length"]
   definitial i
 
-
-defpredicate = (name, nativ, arity) ->
-  defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
 
 defprimitive "cons", cons, 2
 defprimitive "car", car, 2
