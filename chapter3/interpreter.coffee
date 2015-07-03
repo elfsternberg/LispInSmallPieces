@@ -3,23 +3,47 @@ readline = require "readline"
 {inspect} = require "util"
 print = require "./print"
 
-class Value
+ntype = (node) -> car node
+nvalu = (node) -> cadr node
 
-class Environment
+class Value
 
 class Continuation
   constructor: (@k) ->
+  invoke: (v, env, kont) ->
+    if nilp cdr v
+      resume @k, (car v)
+    else
+      throw "Continuations expect one argument", [v, env, kont]
+
+# Abstract class representing the environment
+
+class Environment
+  lookup: -> throw "Nonspecific invocation"
+  update: -> throw "Nonspecific invocation"
+
+# Base of the environment stack.  If you hit this, your variable was
+# never found for lookup/update.  Note that at this time in the
+# class, you have not 
 
 class NullEnv extends Environment
   lookup: -> throw "Unknown variable"
   update: -> throw "Unknown variable"
-  
+
+# This appears to be an easy and vaguely abstract handle to the
+# environment.  The book is not clear on the distinction between the
+# FullEnv and the VariableEnv.
+            
 class FullEnv extends Environment
   constructor: (@others, @name) ->
   lookup: (name, kont) ->
     @others.lookup name, kont
   update: (name, kont, value) ->
     @others.update name, kont, value
+
+# This is the classic environment pair; either it's *this*
+# environment, or it's a parent environment, until you hit the
+# NullEnv.
 
 class VariableEnv extends FullEnv
   constructor: (@others, @name, @value) ->
@@ -81,7 +105,7 @@ class SetCont extend Continuation
 
 # LAMBDA
 
-evaluateLambda = (name, exp, env, kont) ->
+evaluateLambda = (names, exp, env, kont) ->
   resume kont, new Function names, exp, env
 
 class Function extends Value
@@ -134,58 +158,45 @@ class BottomCont extends Continuation
     @f(v)
     
 class Primitive extends Value
-  constructor: (@name, @address) ->
-    
+  constructor: (@name, @nativ) ->
+  invoke: (args, env, kont) ->
+    @nativ.apply null, (listToVector args), env, kont
 
+env_init = new NullEnv()
 
-
-
+interpreter = (ast, kont) ->
+  evaluate ast, env_init, new BottomCont null, kont
+  
 evaluate = (e, env, kont) ->
   [type, exp] = [(ntype e), (nvalu e)]
   if type == "symbol"
-    return variables.evaluate exp, env, kont
-
+    return evaluateVariable exp, env, kont
   if type in ["number", "string", "boolean", "vector"]
     return exp
-
   if type == "list"
     head = car exp
     if (ntype head) == 'symbol'
       switch (nvalu head)
-        when "quote" then resume (cdr exp), kont
+        when "quote" then evaluateQuote (cdr exp), env, kont
         when "if" then evaluateIf (cdr exp), env, kont
-
-          evaluate (cadr e), env, new Ifs((-> (caddr e)), (->(cadddr e)), env, kont)
-        when "begin" then eprogn (cdr exp), env
-        when "set!" then update (nvalu cadr exp), env, (evaluate (caddr exp), env)
-        when "lambda" then make_function (astSymbolsToLispSymbols cadr exp), (cddr exp), env
-        else invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+        when "begin" then evaluateBegin (cdr exp), env, kont
+        when "set!" then evaluateSet (nvalu cadr exp), (nvalu caddr exp), env, kont
+        when "lambda" then evaluateLambda (astSymbolsToLispSymbols cadr exp), (cddr exp), env, kont
+        evaluateApplication (car exp), (cdr exp), env, cont
     else
-      invoke (evaluate (car exp), env), (evlis (cdr exp), env)
+      evaluateApplication (car exp), (cdr exp), env, cont
   else
     throw new Error("Can't handle a #{type}")
 
-class Ifs:
-  evaluate: (cond, pass, alt, env, kont) ->
-    if cond then 
-
-  resume: (
-
-env_init = nil
-env_global = env_init
-
-ntype = (node) -> car node
-nvalu = (node) -> cadr node
-
 definitial = (name, value = nil) ->
-  env_global = (cons (cons name, value), env_global)
+  env_init = new VariableEnv env_init, name, value
   name
 
 defprimitive = (name, nativ, arity) ->
-  definitial name, ((args) ->
+  definitial name, new Primitive name, (args, env, kont) ->
     vmargs = listToVector(args)
     if (vmargs.length == arity)
-      nativ.apply null, vmargs
+      resume kont (nativ.apply null, vmargs
     else
       throw "Incorrect arity")
 
@@ -194,10 +205,11 @@ the_false_value = (cons "false", "boolean")
 definitial "#t", true
 definitial "#f", the_false_value
 definitial "nil", nil
-definitial "foo"
-definitial "bar"
-definitial "fib"
-definitial "fact"
+for i in [
+  "x", "y", "z", "a", "b", "c", "foo", "bar", "hux",
+  "fib", "fact", "visit", "primes", "length"]
+  definitial i
+
 
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
