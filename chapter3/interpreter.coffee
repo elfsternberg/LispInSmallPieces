@@ -1,4 +1,4 @@
-{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
+{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr, setcar} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
 print = require "./print"
@@ -8,6 +8,10 @@ nvalu = (node) -> cadr node
 
 class Value
 
+# Represents the base class of a continuation.  Calls to invoke resume
+# the contained continuation, which is typecast to one of the specific
+# continuation needs of conditional, sequence, etc...
+  
 class Continuation
   constructor: (@k) ->
   invoke: (v, env, kont) ->
@@ -43,28 +47,33 @@ class FullEnv extends Environment
 
 # This is the classic environment pair; either it's *this*
 # environment, or it's a parent environment, until you hit the
-# NullEnv.
+# NullEnv.  Once the name has been found, the continuation is called
+# with the found value.
 
 class VariableEnv extends FullEnv
   constructor: (@others, @name, @value) ->
     lookup: (name, kont) ->
       if name == @name
-        resume kont, @value
+        kont.resume @value
       else
         @others.lookup name, kont
     update: (nam, kont, value) ->
       if name == @name
         @value = value
-        resume kont, value
+        kont.resume value
       else
         @others.update name, kont, value
 
-# QUOTE
+# "Renders the quote term to the current continuation"; in a more
+# familiar parlance, calls resume in the current context with the
+# quoted term uninterpreted.
 
 evaluateQuote = (v, env, kont) ->
-  resume kont, v
+  kont.resume v
 
-# IF    
+# Evaluates the conditional expression, creating a continuation with
+# the current environment that, when resumed, evaluates either the
+# true or false branch, again in the current enviornment.
 
 evaluateIf = (exps, env, kont) ->
   evaluate (car e), env, new IfCont(kont, (cadr e), (caddr e), env)
@@ -73,7 +82,9 @@ class IfCont extends Continuation
   constructor: (@k, @ift, @iff, @env) ->
   resume: (v) -> evaluate (if v then @ift else @iff), @env, @k
 
-# BEGIN
+# Sequences: evaluates the current expression with a continuation that
+# represents "the next expression" in the sequence.  Upon resumption,
+# calls this function with that next expression.
 
 evaluateBegin = (exps, env, kont) ->
   if (pairp exps)
@@ -82,18 +93,21 @@ evaluateBegin = (exps, env, kont) ->
     else
       evaluate (car exps), env, kont
   else
-    resume kont, "Begin empty value"
+    kont.resume("Begin empty value")
 
 class BeginCont extends Continuation
   constructor: (@k, @exps, @env) ->
   resume: (v) -> evaluateBegin (cdr @exps), @env, @k
 
-# VARIABLE
+# In this continuation, we simply pass the continuation and the name
+# to the environment to look up.  The environment knows to call the
+# continuation with the value.
 
 evaluateVariable = (name, env, kont) ->
   env.lookup(name, kont)
 
-# SET
+# This is the same dance as lookup, only with the continuation being
+# called after an update has been performed.
 
 evaluateSet = (name, exp, env, kont) ->
   evaluate exp, env, (new setCont(kont, name, env)) 
@@ -103,15 +117,25 @@ class SetCont extend Continuation
   resume: (value) ->
     update @env, @name, @k, value
 
-# LAMBDA
+# Calls the current contunation, passing it a new function wrapper.
 
 evaluateLambda = (names, exp, env, kont) ->
-  resume kont, new Function names, exp, env
+  kont.resume new Function names, exp, env
+
+# Upon invocation, evaluates the body with a new environment that
+# consists of the original names, their current values as called, and
+# the continuation an the moment of invocation, which will continue
+# (resume) execution once the function is finished.
+#
+# By the way: this is pretty much the whole the point.
 
 class Function extends Value
   constructor: (@variables, @body, @env) ->
   invoke: (values, env, kont) ->
     evaluateBegin @body, (extend @env, @variables, values), kont
+
+# Helper function to build name/value pairs for the current execution
+# context.
 
 extend = (env, names, values) ->
   if (pairp names) and (pairp values)
@@ -121,7 +145,13 @@ extend = (env, names, values) ->
   else
     new VariableEnv env, names, values
 
-# APPLICATION
+# Now we start the invocation: this is applying the function.  Let's
+# take it stepwise.
+
+# Create a function environment.  Calls the evaluateArguments(), which
+# in turns goes down the list of arguments and creates a new
+# environment, and then the continuation is to actually appy the nev
+# environment to the existing function.
 
 evaluateApplication = (exp, exps, env, kont) ->
   evaluate exp, env, (new EvFunCont kont, exps, env)
@@ -131,26 +161,37 @@ class EvFunCont extends Continuation
   resume: (f) ->
     evaluateArguments (@exp, @k, new ApplyCont @k, f, @env)
 
+# Evaluate the first list, creating a new list of the arguments.  Upon
+# completion, resume the continuation with the gather phase
+
 evaluateArguments = (exp, env, kont) ->
   if (pairp exp)
     evaluate (car exp), env, (new ArgumentCont kont, exp, env)
   else
-    resume kont, "No more arguments"
+    kont.resume("No more arguments")
 
-class ApplyCont extends Continuation
-  constructor: (@k, @fn, @env) ->
-  resume: (v) ->
-    invoke @fn, v, @env, @k
-    
 class ArgumentCont extends Continuation
   constructor: (@k, @exp, @env) ->
   resume: (v) ->
     evaluateArguments (cdr @env, @env, new GatherCont @k, v)
 
+# Gather the arguments as each ArgumentCont is resumed into a list to
+# be passed to our next step.
+
 class GatherCont extends Continuation
   constructor: (@k, @v) ->
   resume: (v) ->
      @k.resume (cons @v, v)
+
+# Upon resumption, invoke the function.
+    
+class ApplyCont extends Continuation
+  constructor: (@k, @fn, @env) ->
+  resume: (v) ->
+    invoke @fn, v, @env, @k
+
+# A special continuation that represents what we want the interpreter
+# to do when it's done processing.
     
 class BottomCont extends Continuation
   constructor: (@k, @f) ->
@@ -162,11 +203,6 @@ class Primitive extends Value
   invoke: (args, env, kont) ->
     @nativ.apply null, (listToVector args), env, kont
 
-env_init = new NullEnv()
-
-interpreter = (ast, kont) ->
-  evaluate ast, env_init, new BottomCont null, kont
-  
 evaluate = (e, env, kont) ->
   [type, exp] = [(ntype e), (nvalu e)]
   if type == "symbol"
@@ -196,7 +232,7 @@ defprimitive = (name, nativ, arity) ->
   definitial name, new Primitive name, (args, env, kont) ->
     vmargs = listToVector(args)
     if (vmargs.length == arity)
-      resume kont (nativ.apply null, vmargs
+      kont.resume (nativ.apply null, vmargs)
     else
       throw "Incorrect arity")
 
@@ -210,127 +246,47 @@ for i in [
   "fib", "fact", "visit", "primes", "length"]
   definitial i
 
-
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
 
 defprimitive "cons", cons, 2
 defprimitive "car", car, 2
+defprimitive "cdr", cdr, 2
 defprimitive "set-cdr!", setcdr, 2
+defprimitive "set-car!", setcar, 2
 defprimitive "+", ((a, b) -> a + b), 2
 defprimitive "*", ((a, b) -> a * b), 2
 defprimitive "-", ((a, b) -> a - b), 2
 defprimitive "/", ((a, b) -> a / b), 2
 defpredicate "lt", ((a, b) -> a < b), 2
+defpredicate "gt", ((a, b) -> a > b), 2
+defpredicate "lte", ((a, b) -> a <= b), 2
+defpredicate "gte", ((a, b) -> a >= b), 2
 defpredicate "eq?", ((a, b) -> a == b), 2
+defpredicate "pair?" ((a) -> pairp a), 1
+defpredicate "nil?" ((a) -> nilp a), 1
+defpredicate "symbol?" ((a) -> /\-?[0-9]+$/.test(a) == false), 1
 
-
-
-
-
-
-
-
-extend = (env, variables, values) ->
-  if (pairp variables)
-    if (pairp values)
-      (cons (cons (car variables), (car values)),
-        (extend env, (cdr variables), (cdr values)))
-    else
-      throw "Too few values"
-  else if (nilp variables)
-    if (nilp values) then env else throw "Too many values"
+definitial "call/cc", new Primitive "call/cc", (values, env, kont) ->
+  if nilp cdr values
+    (car values).invoke (cons kont), env, kont
   else
-    if (symbolp variables)
-      (cons (cons variables, values), env)
-    else
-      nil
+    throw "Incorrect arity for call/cc", [r, k]
 
-make_function = (variables, body, env) ->
-  (values) -> eprogn body, (extend env, variables, values)
+definitial "apply", new Primitive "apply", (values, env, kont) ->
+  if pairp cdr values
+    f = car values
+    args = (() ->
+      (flat = (args) ->
+        if nilp cdr args then (car args) else (cons (car args), (flat cdr args)))(cdr values))()
+    f.invoke args, env, kont
 
-invoke = (fn, args) ->
-  (fn args)
+definitial "list", new Primitive "list", (values, env, kont) ->
+  (values, env, kont) -> kont.resume(values)
 
-# Takes a list of nodes and calls evaluate on each one, returning the
-# last one as the value of the total expression.  In this example, we
-# are hard-coding what ought to be a macro, namely the threading
-# macros, "->"
+env_init = new NullEnv()
 
-eprogn = (exps, env) ->
-  if (pairp exps)
-    if pairp (cdr exps)
-      evaluate (car exps), env
-      eprogn (cdr exps), env
-    else
-      evaluate (car exps), env
-  else
-    nil
-
-evlis = (exps, env) ->
-  if (pairp exps)
-    (cons (evaluate (car exps), env), (evlis (cdr exps), env))
-  else
-    nil
-    
-lookup = (id, env) ->
-  if (pairp env)
-    if (caar env) == id
-      cdar env
-    else
-      lookup id, (cdr env)
-  else
-    nil
-
-update = (id, env, value) ->
-  if (pairp env)
-    if (caar env) == id
-      setcdr value, (car env)
-      value
-    else
-      update id, (cdr env), value
-  else
-    nil
-
-# This really ought to be the only place where the AST meets the
-# interpreter core.  I can't help but think that this design precludes
-#  pluggable interpreter core.
-
-astSymbolsToLispSymbols = (node) ->
-  return nil if nilp node
-  throw "Not a list of variable names" if not (ntype(node) is 'list')
-  handler = (node) ->
-    return nil if nilp node
-    cons (nvalu car node), (handler cdr node)
-  handler(nvalu node)
+interpreter = (ast, kont) ->
+  evaluate ast, env_init, new BottomCont null, kont
   
-
-# Takes an AST node and evaluates it and its contents.  A node may be
-# ("list" (... contents ...)) or ("number" 42) or ("symbol" x), etc.
-
-cadddr = metacadr('cadddr')
-
-class Component
-  invoke: -> throw "Not a function"
-
-class Environment
-  lookup: -> throw "Not an environment"
-
-class NullEnv extends Environment
-  lookup: -> throw "Unknown Variable"
-  
-class FullEnv extends Environment
-  constructor: (@others, @name) ->
-  lookup: (id) -> lookup id, @others
-
-class VariableEnv extends FullEnv
-  constructor:(@others, @name, @value) ->
-  lookup: (id) ->
-
-class Primitive extends Invokable
-  invoke: (args, kont) -> @fn args, kont
-
-
-
-
-module.exports = (c) -> evaluate c, env_global
+module.exports = intepreter
