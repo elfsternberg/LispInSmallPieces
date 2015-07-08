@@ -6,8 +6,8 @@ I don't know Lisp, so I figured the correct place to start was to write
 my own interpreter.  After buying five different textbooks (*The
 Structure and Interpretation of Computer Programs*, aka "The Wizard
 Book", Friedman's *The Essentials of Programming Languages*, *Let over
-Lambda*, *On Lisp*, and finally *Lisp In Small Pieces*, I decided the
-last one gave the clearest step-by-step introduction. 
+Lambda*, *On Lisp*, and one more) I decided Christian Quinnec's *Lisp In
+Small Pieces* gave the clearest step-by-step introduction.
 
 Since I didn't know Lisp, my task was to translate what Quiennec wrote
 in his book into a language I *did* know: Javascript.  Well,
