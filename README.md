@@ -29,7 +29,7 @@ chapter-lambda-1 is not from Lisp In Small Pieces.  It is a primitive
 CPS interpreter built on top of the interpreter from LiSP Chapter 1,
 using techniques derived from a fairly facile reading of 
 <a href="http://lisperator.net/pltut/">Lisperator's "Implement A
-Programming Language in Javascript."  But it was fun.
+Programming Language in Javascript."</a>  But it was fun.
 
 ## LICENSE AND COPYRIGHT NOTICE: NO WARRANTY GRANTED OR IMPLIED
 
