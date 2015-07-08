@@ -1,8 +1,11 @@
-{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
+{listToString, listToVector, pairp, cons, car, cdr, caar, cddr,
+ cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
-print = require "./print"
 
+class LispInterpreterError extends Error
+  name: 'LispInterpreterError'
+  constructor: (@message) ->
 
 env_init = nil
 env_global = env_init
@@ -20,7 +23,7 @@ defprimitive = (name, nativ, arity) ->
     if (vmargs.length == arity)
       nativ.apply null, vmargs
     else
-      throw "Incorrect arity")
+      throw (new LispInterpreterError "Incorrect arity"))
 
 the_false_value = (cons "false", "boolean")
 
@@ -51,9 +54,9 @@ extend = (env, variables, values) ->
       (cons (cons (car variables), (car values)),
         (extend env, (cdr variables), (cdr values)))
     else
-      throw "Too few values"
+      throw new LispInterpreterError "Too few values"
   else if (nilp variables)
-    if (nilp values) then env else throw "Too many values"
+    if (nilp values) then env else throw new LispInterpreterError "Too many values"
   else
     if (symbolp variables)
       (cons (cons variables, values), env)
@@ -112,7 +115,7 @@ update = (id, env, value) ->
 
 astSymbolsToLispSymbols = (node) ->
   return nil if nilp node
-  throw "Not a list of variable names" if not (ntype(node) is 'list')
+  throw (new LispInterpreterError "Not a list of variable names") if not (ntype(node) is 'list')
   handler = (node) ->
     return nil if nilp node
     cons (nvalu car node), (handler cdr node)
@@ -147,6 +150,6 @@ evaluate = (e, env) ->
     else
       invoke (evaluate (car exp), env), (evlis (cdr exp), env)
   else
-    throw new Error("Can't handle a #{type}")
+    throw new LispInterpreterError "Can't handle a #{type}"
 
 module.exports = (c) -> evaluate c, env_global

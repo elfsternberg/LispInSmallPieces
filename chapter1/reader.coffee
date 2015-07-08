@@ -5,8 +5,8 @@
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
 WHITESPACE = [" ", "\t"].concat(NEWLINES)
 
-EOF = new (class)
-EOO = new (class)
+EOF = new (class Eof)()
+EOO = new (class Eoo)()
 
 class Source
   constructor: (@inStream) ->
@@ -29,7 +29,7 @@ class Source
   done: -> @index > @max
 
 # IO -> IO
-skipWS = (inStream) -> 
+skipWS = (inStream) ->
   while inStream.peek() in WHITESPACE then inStream.next()
 
 # (type, value, line, column) -> (node {type, value, line, column)}
@@ -88,7 +88,7 @@ readSymbol = (inStream, tableKeys) ->
   if number?
     return makeObj 'number', number, line, column
   makeObj 'symbol', symbol, line, column
-  
+
 
 # (Delim, TypeName) -> IO -> (IO, node) | Error
 makeReadPair = (delim, type) ->
@@ -143,7 +143,7 @@ readMacros =
   '[': makeReadPair ']', 'vector'
   ']': handleError "Closing bracket encountered"
   '{': makeReadPair('}', 'record', (res) ->
-      res.length % 2 == 0 and true or mkerr "record key without value")
+    res.length % 2 == 0 and true or mkerr "record key without value")
   '}': handleError "Closing curly without corresponding opening."
   "`": prefixReader 'back-quote'
   "'": prefixReader 'quote'
@@ -188,19 +188,19 @@ read = (inStream, eofErrorP = false, eofError = EOF, recursiveP = false, inReadM
 
 # IO -> (Form* | Error)
 readForms = (inStream) ->
-    inStream = if inStream instanceof Source then inStream else new Source inStream
-    return nil if inStream.done()
+  inStream = if inStream instanceof Source then inStream else new Source inStream
+  return nil if inStream.done()
 
-    # IO -> (FORM*, IO) | Error
-    [line, column] = inStream.position()
-    readEach = (inStream) ->
-      obj = read inStream, true, null, false
-      return nil if (nilp obj)
-      return obj if (car obj) == 'error'
-      cons obj, readEach inStream
+  # IO -> (FORM*, IO) | Error
+  [line, column] = inStream.position()
+  readEach = (inStream) ->
+    obj = read inStream, true, null, false
+    return nil if (nilp obj)
+    return obj if (car obj) == 'error'
+    cons obj, readEach inStream
 
-    obj = readEach inStream
-    if (car obj) == 'error' then obj else makeObj "list", obj, line, column
+  obj = readEach inStream
+  if (car obj) == 'error' then obj else makeObj "list", obj, line, column
 
 exports.read = read
 exports.readForms = readForms

@@ -1,7 +1,11 @@
-{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
+{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
+ cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
-print = require "../chapter1/print"
+
+class LispInterpreterError extends Error
+  name: 'LispInterpreterError'
+  constructor: (@message) ->
 
 env_init = nil
 env_global = env_init
@@ -19,7 +23,7 @@ defprimitive = (name, nativ, arity) ->
     if (vmargs.length == arity)
       callback nativ.apply null, vmargs
     else
-      throw "Incorrect arity")
+      throw new LispInterpreterError "Incorrect arity")
 
 the_false_value = (cons "false", "boolean")
 
@@ -50,9 +54,9 @@ extend = (env, variables, values) ->
       (cons (cons (car variables), (car values)),
         (extend env, (cdr variables), (cdr values)))
     else
-      throw "Too few values"
+      throw new LispInterpreterError "Too few values"
   else if (nilp variables)
-    if (nilp values) then env else throw "Too many values"
+    if (nilp values) then env else throw new LispInterpreterError "Too many values"
   else
     if (symbolp variables)
       (cons (cons variables, values), env)
@@ -87,7 +91,7 @@ evlis = (exps, env, callback) ->
         callback cons calc, rest
   else
     callback nil
-    
+
 lookup = (id, env) ->
   if (pairp env)
     if (caar env) == id
@@ -113,12 +117,12 @@ update = (id, env, value, callback) ->
 
 astSymbolsToLispSymbols = (node) ->
   return nil if nilp node
-  throw "Not a list of variable names" if not (ntype(node) is 'list')
+  throw (new LispInterpreterError "Not a list of variable names") if not (ntype(node) is 'list')
   handler = (node) ->
     return nil if nilp node
     cons (nvalu car node), (handler cdr node)
   handler(nvalu node)
-  
+
 
 # Takes an AST node and evaluates it and its contents.  A node may be
 # ("list" (... contents ...)) or ("number" 42) or ("symbol" x), etc.
@@ -157,6 +161,6 @@ evaluate = (e, env, callback) ->
         evlis (cdr exp), env, (args) ->
           invoke fn, args, callback
   else
-    throw new Error("Can't handle a #{type}")
+    throw new LispInterpreterError ("Can't handle a #{type}")
 
 module.exports = (c, cb) -> evaluate c, env_global, cb

@@ -1,6 +1,12 @@
-{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr, setcar} = require "cons-lists/lists"
+{listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
+ cadr, caadr, cadar, caddr, nilp, nil, setcdr,
+ metacadr, setcar} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
+
+class LispInterpreterError extends Error
+  name: 'LispInterpreterError'
+  constructor: (@message) ->
 
 ntype = (node) -> car node
 nvalu = (node) -> cadr node
@@ -12,33 +18,33 @@ class Value
 # Represents the base class of a continuation.  Calls to invoke resume
 # the contained continuation, which is typecast to one of the specific
 # continuation needs of conditional, sequence, etc...
-  
+
 class Continuation
   constructor: (@k) ->
   invoke: (v, env, kont) ->
     if nilp cdr v
       @k.resume (car v)
     else
-      throw "Continuations expect one argument"
+      throw new LispInterpreterError "Continuations expect one argument"
 
 # Abstract class representing the environment
 
 class Environment
-  lookup: -> throw "Nonspecific invocation"
-  update: -> throw "Nonspecific invocation"
+  lookup: -> throw new LispInterpreterError "Nonspecific invocation"
+  update: -> throw new LispInterpreterError "Nonspecific invocation"
 
 # Base of the environment stack.  If you hit this, your variable was
 # never found for lookup/update.  Note that at this time in the
-# class, you have not 
+# class, you have not
 
 class NullEnv extends Environment
-  lookup: (e) -> throw "Unknown variable #{e}"
-  update: (e) -> throw "Unknown variable #{e}"
+  lookup: (e) -> throw new LispInterpreterError "Unknown variable #{e}"
+  update: (e) -> throw new LispInterpreterError "Unknown variable #{e}"
 
 # This appears to be an easy and vaguely abstract handle to the
 # environment.  The book is not clear on the distinction between the
 # FullEnv and the VariableEnv.
-            
+
 class FullEnv extends Environment
   constructor: (@others, @name) ->
     @_type = "FullEnv"
@@ -116,7 +122,7 @@ evaluateVariable = (name, env, kont) ->
 # called after an update has been performed.
 
 evaluateSet = (name, exp, env, kont) ->
-  evaluate exp, env, (new SetCont(kont, name, env)) 
+  evaluate exp, env, (new SetCont(kont, name, env))
 
 class SetCont extends Continuation
   constructor: (@k, @name, @env) ->
@@ -149,7 +155,7 @@ extend = (env, names, values) ->
   if (pairp names) and (pairp values)
     new VariableEnv (extend env, (cdr names), (cdr values)), (car names), (car values)
   else if (nilp names)
-    if (nilp values) then env else throw "Arity mismatch"
+    if (nilp values) then env else throw new LispInterpreterError "Arity mismatch"
   else
     new VariableEnv env, names, values
 
@@ -195,7 +201,7 @@ class GatherCont extends Continuation
     @k.resume (cons @v, v)
 
 # Upon resumption, invoke the function.
-    
+
 class ApplyCont extends Continuation
   constructor: (@k, @fn, @env) ->
     @_type = "ApplyCont"
@@ -205,13 +211,13 @@ class ApplyCont extends Continuation
 
 # A special continuation that represents what we want the interpreter
 # to do when it's done processing.
-    
+
 class BottomCont extends Continuation
   constructor: (@k, @f) ->
     @_type = "BottomCont"
   resume: (v) ->
     @f(v)
-    
+
 class Primitive extends Value
   constructor: (@name, @nativ) ->
     @_type = "Primitive"
@@ -220,7 +226,7 @@ class Primitive extends Value
 
 astSymbolsToLispSymbols = (node) ->
   return nil if nilp node
-  throw "Not a list of variable names" if not (ntype(node) is 'list')
+  throw (new LispInterpreterError "Not a list of variable names") if not (ntype(node) is 'list')
   handler = (node) ->
     return nil if nilp node
     cons (nvalu car node), (handler cdr node)
@@ -245,7 +251,7 @@ evaluate = (e, env, kont) ->
     else
       evaluateApplication (car exp), (cdr exp), env, kont
   else
-    throw new Error("Can't handle a '#{type}'")
+    throw new LispInterpreterError("Can't handle a '#{type}'")
 
 env_init = new NullEnv()
 
@@ -259,7 +265,7 @@ defprimitive = (name, nativ, arity) ->
     if (vmargs.length == arity)
       kont.resume (nativ.apply null, vmargs)
     else
-      throw "Incorrect arity"
+      throw new LispInterpreterError "Incorrect arity"
 
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
@@ -294,7 +300,7 @@ definitial "call/cc", new Primitive "call/cc", (values, env, kont) ->
   if nilp cdr values
     (car values).invoke (cons kont), env, kont
   else
-    throw ["Incorrect arity for call/cc", [r, k]]
+    throw new LispInterpreterError "Incorrect arity for call/cc"
 
 definitial "apply", new Primitive "apply", (values, env, kont) ->
   if pairp cdr values
@@ -309,5 +315,5 @@ definitial "list", new Primitive "list", (values, env, kont) ->
 
 interpreter = (ast, kont) ->
   evaluate ast, env_init, new BottomCont null, kont
-  
+
 module.exports = interpreter

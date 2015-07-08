@@ -1,6 +1,6 @@
 chai = require 'chai'
 chai.should()
-expect = chai.expect 
+expect = chai.expect
 
 {cons} = require "cons-lists/lists"
 olisp = require '../chapter3/interpreter'
@@ -27,7 +27,7 @@ describe "Core interpreter #3", ->
     expect(lisp read '(begin (if (eq? "y" "y") "y" "n"))').to.equal("y")
   it "Should handle inequivalent objects that are not intrinsically truthy", ->
     expect(lisp read '(begin (if (eq? "y" "x") "y" "n"))').to.equal("n")
-      
+
   it "Should handle basic arithmetic", ->
     expect(lisp read '(begin (+ 5 5))').to.equal(10)
     expect(lisp read '(begin (* 5 5))').to.equal(25)
@@ -51,5 +51,5 @@ describe "Core interpreter #3", ->
 
   it "Should handle an IIFE", ->
     expect(lisp read '(begin ((lambda () (+ 5 5))))').to.equal(10)
-    
+
 

@@ -1,6 +1,6 @@
 chai = require 'chai'
 chai.should()
-expect = chai.expect 
+expect = chai.expect
 
 {cons, nil, nilp} = require "cons-lists/lists"
 {read, readForms} = require '../chapter1/reader'
