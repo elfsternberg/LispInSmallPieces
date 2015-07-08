@@ -16,6 +16,9 @@ node_modules: package.json
 	mkdir -p node_modules
 	npm install
 
+lint:
+	coffeelint $(SOURCES)
+
 test: clean node_modules
 	@JUNIT_REPORT_PATH=test-reports.xml JUNIT_REPORT_STACK=1 ./node_modules/.bin/mocha \
 		--reporter mocha-jenkins-reporter --compilers coffee:coffee-script/register || true
