@@ -1,8 +1,9 @@
-{car, cdr} = require 'cons-lists/lists'
+{car, cdr, listp} = require 'cons-lists/lists'
 
 symbol = (form) -> (car form)
 
 module.exports =
+  astObject: (form) -> typeof (car form) == "string"
   aSymbol: symbol
   aValue:  (form) -> (car cdr form)
   isAList: (form) -> (symbol form) == 'list'

@@ -1,7 +1,8 @@
-{car, cdr, cons, listp, nilp, nil, list, listToString} = require 'cons-lists/lists'
-{aSymbol, aValue} = require './astAccessors'
+{car, cdr, cons, listp, nilp, nil, list, pairp, listToString} = require 'cons-lists/lists'
+{aSymbol, aValue, astObject} = require './astAccessors'
 
 # RICH_AST -> LISP_AST
+
 normalizeForm = (form) ->
 
   listToRecord1 = (l) ->
@@ -41,6 +42,10 @@ normalizeForms = (forms) ->
   # Yes, this reifies the expectation than an empty list and 'nil' are
   # the same.
   return nil if nilp forms
+
+  # Handle dotted list.
+  if (astObject forms)
+    return normalizeForm(forms)
   cons(normalizeForm(car forms), normalizeForms(cdr forms))
   
 module.exports =

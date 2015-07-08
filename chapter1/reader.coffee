@@ -102,13 +102,20 @@ makeReadPair = (delim, type) ->
       return makeObj(type, nil, line, column)
 
     # IO -> (IO, Node) | Error
+    dotted = false
     readEachPair = (inStream) ->
       [line, column] = inStream.position()
       obj = read inStream, true, null, true
-      if inStream.peek() == delim then return cons obj, nil
+      if inStream.peek() == delim
+        if dotted then return obj
+        return cons obj, nil
       if inStream.done() then return handleError("Unexpected end of input")(line, column)
+      if dotted then return handleError("More than one symbol after dot")
       return obj if (car obj) == 'error'
-      cons obj, readEachPair(inStream)
+      if (car obj) == 'symbol' and (car cdr obj) == '.'
+        dotted = true
+        return readEachPair inStream
+      cons obj, readEachPair inStream
 
     ret = makeObj type, readEachPair(inStream), line, column
     inStream.next()
