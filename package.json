@@ -1,5 +1,5 @@
 {
-  "name": "CoffeeLisp",
+  "name": "LispInSmallPieces",
   "version": "0.0.1",
   "description": "A Coffeescript rendition of Lisp In Small Pieces",
   "main": "bin/lisp",
@@ -13,9 +13,15 @@
     "mocha-jenkins-reporter": "^0.1.7"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "make test",
+    "build": "make node_modules"
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://elfsternberg@elfsternberg.com/home/elfsternberg/repos/LispInSmallPieces"
   },
   "keywords": [
+    "lisp",
     "scheme",
     "practice",
     "interpreter",
