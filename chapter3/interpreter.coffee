@@ -1,10 +1,11 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr, setcar} = require "cons-lists/lists"
 readline = require "readline"
 {inspect} = require "util"
-print = require "./print"
 
 ntype = (node) -> car node
 nvalu = (node) -> cadr node
+
+the_false_value = (cons "false", "boolean")
 
 class Value
 
@@ -18,7 +19,7 @@ class Continuation
     if nilp cdr v
       @k.resume (car v)
     else
-      throw "Continuations expect one argument", [v, env, kont]
+      throw "Continuations expect one argument"
 
 # Abstract class representing the environment
 
@@ -31,8 +32,8 @@ class Environment
 # class, you have not 
 
 class NullEnv extends Environment
-  lookup: -> throw "Unknown variable"
-  update: -> throw "Unknown variable"
+  lookup: (e) -> throw "Unknown variable #{e}"
+  update: (e) -> throw "Unknown variable #{e}"
 
 # This appears to be an easy and vaguely abstract handle to the
 # environment.  The book is not clear on the distinction between the
@@ -40,6 +41,7 @@ class NullEnv extends Environment
             
 class FullEnv extends Environment
   constructor: (@others, @name) ->
+    @_type = "FullEnv"
   lookup: (name, kont) ->
     @others.lookup name, kont
   update: (name, kont, value) ->
@@ -52,17 +54,18 @@ class FullEnv extends Environment
 
 class VariableEnv extends FullEnv
   constructor: (@others, @name, @value) ->
-    lookup: (name, kont) ->
-      if name == @name
-        kont.resume @value
-      else
-        @others.lookup name, kont
-    update: (nam, kont, value) ->
-      if name == @name
-        @value = value
-        kont.resume value
-      else
-        @others.update name, kont, value
+    @_type = "VariableEnv"
+  lookup: (name, kont) ->
+    if name == @name
+      kont.resume @value
+    else
+      @others.lookup name, kont
+  update: (name, kont, value) ->
+    if name == @name
+      @value = value
+      kont.resume value
+    else
+      @others.update name, kont, value
 
 # "Renders the quote term to the current continuation"; in a more
 # familiar parlance, calls resume in the current context with the
@@ -76,11 +79,13 @@ evaluateQuote = (v, env, kont) ->
 # true or false branch, again in the current enviornment.
 
 evaluateIf = (exps, env, kont) ->
-  evaluate (car e), env, new IfCont(kont, (cadr e), (caddr e), env)
+  evaluate (car exps), env, new IfCont(kont, (cadr exps), (caddr exps), env)
 
 class IfCont extends Continuation
   constructor: (@k, @ift, @iff, @env) ->
-  resume: (v) -> evaluate (if v then @ift else @iff), @env, @k
+    @_type = "IfCont"
+  resume: (value) ->
+    evaluate (if value == the_false_value then @iff else @ift), @env, @k
 
 # Sequences: evaluates the current expression with a continuation that
 # represents "the next expression" in the sequence.  Upon resumption,
@@ -97,6 +102,7 @@ evaluateBegin = (exps, env, kont) ->
 
 class BeginCont extends Continuation
   constructor: (@k, @exps, @env) ->
+    @_type = "BeginCont"
   resume: (v) -> evaluateBegin (cdr @exps), @env, @k
 
 # In this continuation, we simply pass the continuation and the name
@@ -110,12 +116,13 @@ evaluateVariable = (name, env, kont) ->
 # called after an update has been performed.
 
 evaluateSet = (name, exp, env, kont) ->
-  evaluate exp, env, (new setCont(kont, name, env)) 
+  evaluate exp, env, (new SetCont(kont, name, env)) 
 
-class SetCont extend Continuation
+class SetCont extends Continuation
   constructor: (@k, @name, @env) ->
+    @_type = "SetCont"
   resume: (value) ->
-    update @env, @name, @k, value
+    @env.update @name, @k, value
 
 # Calls the current contunation, passing it a new function wrapper.
 
@@ -131,6 +138,7 @@ evaluateLambda = (names, exp, env, kont) ->
 
 class Function extends Value
   constructor: (@variables, @body, @env) ->
+    @_type = "Function"
   invoke: (values, env, kont) ->
     evaluateBegin @body, (extend @env, @variables, values), kont
 
@@ -139,7 +147,7 @@ class Function extends Value
 
 extend = (env, names, values) ->
   if (pairp names) and (pairp values)
-    new VariableEnv (extend env (cdr names) (cdr values)), (car names), (car values)
+    new VariableEnv (extend env, (cdr names), (cdr values)), (car names), (car values)
   else if (nilp names)
     if (nilp values) then env else throw "Arity mismatch"
   else
@@ -158,8 +166,9 @@ evaluateApplication = (exp, exps, env, kont) ->
 
 class EvFunCont extends Continuation
   constructor: (@k, @exp, @env) ->
+    @_type = "EvFunCont"
   resume: (f) ->
-    evaluateArguments (@exp, @k, new ApplyCont @k, f, @env)
+    evaluateArguments @exp, @env, (new ApplyCont(@k, f, @env))
 
 # Evaluate the first list, creating a new list of the arguments.  Upon
 # completion, resume the continuation with the gather phase
@@ -168,47 +177,61 @@ evaluateArguments = (exp, env, kont) ->
   if (pairp exp)
     evaluate (car exp), env, (new ArgumentCont kont, exp, env)
   else
-    kont.resume("No more arguments")
+    kont.resume(nil)
 
 class ArgumentCont extends Continuation
   constructor: (@k, @exp, @env) ->
+    @_type = "ArgumentCont"
   resume: (v) ->
-    evaluateArguments (cdr @env, @env, new GatherCont @k, v)
+    evaluateArguments (cdr @exp), @env, (new GatherCont @k, v)
 
 # Gather the arguments as each ArgumentCont is resumed into a list to
 # be passed to our next step.
 
 class GatherCont extends Continuation
   constructor: (@k, @v) ->
+    @_type = "GatherCont"
   resume: (v) ->
-     @k.resume (cons @v, v)
+    @k.resume (cons @v, v)
 
 # Upon resumption, invoke the function.
     
 class ApplyCont extends Continuation
   constructor: (@k, @fn, @env) ->
+    @_type = "ApplyCont"
   resume: (v) ->
-    invoke @fn, v, @env, @k
+    console.log
+    @fn.invoke v, @env, @k
 
 # A special continuation that represents what we want the interpreter
 # to do when it's done processing.
     
 class BottomCont extends Continuation
   constructor: (@k, @f) ->
+    @_type = "BottomCont"
   resume: (v) ->
     @f(v)
     
 class Primitive extends Value
   constructor: (@name, @nativ) ->
+    @_type = "Primitive"
   invoke: (args, env, kont) ->
-    @nativ.apply null, (listToVector args), env, kont
+    @nativ.apply null, [args, env, kont]
+
+astSymbolsToLispSymbols = (node) ->
+  return nil if nilp node
+  throw "Not a list of variable names" if not (ntype(node) is 'list')
+  handler = (node) ->
+    return nil if nilp node
+    cons (nvalu car node), (handler cdr node)
+  handler(nvalu node)
 
 evaluate = (e, env, kont) ->
   [type, exp] = [(ntype e), (nvalu e)]
   if type == "symbol"
     return evaluateVariable exp, env, kont
   if type in ["number", "string", "boolean", "vector"]
-    return exp
+    return kont.resume exp
   if type == "list"
     head = car exp
     if (ntype head) == 'symbol'
@@ -216,13 +239,15 @@ evaluate = (e, env, kont) ->
         when "quote" then evaluateQuote (cdr exp), env, kont
         when "if" then evaluateIf (cdr exp), env, kont
         when "begin" then evaluateBegin (cdr exp), env, kont
-        when "set!" then evaluateSet (nvalu cadr exp), (nvalu caddr exp), env, kont
+        when "set!" then evaluateSet (nvalu cadr exp), (caddr exp), env, kont
         when "lambda" then evaluateLambda (astSymbolsToLispSymbols cadr exp), (cddr exp), env, kont
-        evaluateApplication (car exp), (cdr exp), env, cont
+        else evaluateApplication (car exp), (cdr exp), env, kont
     else
-      evaluateApplication (car exp), (cdr exp), env, cont
+      evaluateApplication (car exp), (cdr exp), env, kont
   else
-    throw new Error("Can't handle a #{type}")
+    throw new Error("Can't handle a '#{type}'")
+
+env_init = new NullEnv()
 
 definitial = (name, value = nil) ->
   env_init = new VariableEnv env_init, name, value
@@ -234,12 +259,10 @@ defprimitive = (name, nativ, arity) ->
     if (vmargs.length == arity)
       kont.resume (nativ.apply null, vmargs)
     else
-      throw "Incorrect arity")
+      throw "Incorrect arity"
 
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
-
-the_false_value = (cons "false", "boolean")
 
 definitial "#t", true
 definitial "#f", the_false_value
@@ -263,30 +286,28 @@ defpredicate "gt", ((a, b) -> a > b), 2
 defpredicate "lte", ((a, b) -> a <= b), 2
 defpredicate "gte", ((a, b) -> a >= b), 2
 defpredicate "eq?", ((a, b) -> a == b), 2
-defpredicate "pair?" ((a) -> pairp a), 1
-defpredicate "nil?" ((a) -> nilp a), 1
-defpredicate "symbol?" ((a) -> /\-?[0-9]+$/.test(a) == false), 1
+defpredicate "pair?", ((a) -> pairp a), 1
+defpredicate "nil?", ((a) -> nilp a), 1
+defpredicate "symbol?", ((a) -> /\-?[0-9]+$/.test(a) == false), 1
 
 definitial "call/cc", new Primitive "call/cc", (values, env, kont) ->
   if nilp cdr values
     (car values).invoke (cons kont), env, kont
   else
-    throw "Incorrect arity for call/cc", [r, k]
+    throw ["Incorrect arity for call/cc", [r, k]]
 
 definitial "apply", new Primitive "apply", (values, env, kont) ->
   if pairp cdr values
     f = car values
     args = (() ->
       (flat = (args) ->
-        if nilp cdr args then (car args) else (cons (car args), (flat cdr args)))(cdr values))()
+        if nilp (cdr args) then (car args) else (cons (car args), (flat cdr args)))(cdr values))()
     f.invoke args, env, kont
 
 definitial "list", new Primitive "list", (values, env, kont) ->
   (values, env, kont) -> kont.resume(values)
 
-env_init = new NullEnv()
-
 interpreter = (ast, kont) ->
   evaluate ast, env_init, new BottomCont null, kont
   
-module.exports = intepreter
+module.exports = interpreter
