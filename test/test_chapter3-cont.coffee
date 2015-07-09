@@ -23,12 +23,18 @@ describe "Core interpreter #3: Blocks", ->
   it "Should handle basic returns blocks", ->
     expect(lisp read "(block foo (+ 1 (return-from foo 2)))").to.equal(2)
   it "Should handle complex returns blocks", ->
-    expect(lisp read "(block foo ((lambda (exit)(* 2 (block foo (* 3 (exit 5)) )) ) (lambda (x) (return-from foo x)) ) )").to.equal(5)
+    code = "(block foo ((lambda (exit)(* 2 (block foo (* 3 (exit 5)) )) ) (lambda (x) (return-from foo x)) ) )"
+    expect(lisp read code).to.equal(5)
   it "Expects an uninitialized return-from to fail", ->
     expect(-> lisp read "(return-from foo 3)").to.throw("Unknown block label foo")
   it "Expects to see an obsolete block when called late", ->
-    expect(-> lisp read "((block foo (lambda (x) (return-from foo x))) 3 )").to.throw("Obsolete continuation")
+    expect(-> lisp read "((block foo (lambda (x) (return-from foo x))) 3 )")
+      .to.throw("Obsolete continuation")
   it "Expects to see an obsolete block when called late", ->
-    expect(-> lisp read "((block a  (* 2 (block b (return-from a (lambda (x) (return-from b x))))) )3 )").to.throw("Obsolete continuation")
+    blocka = "((block a  (* 2 (block b (return-from a (lambda (x) (return-from b x))))) )3 )"
+    expect(-> lisp read blocka).to.throw("Obsolete continuation")
   it "Expects to see an obsolete block when called late", ->
-    expect(-> lisp read "((block a (* 2 (block b (return-from a (lambda (x) (return-from a x))))) ) 3 )").to.throw("Obsolete continuation")
+    blockb = "((block a (* 2 (block b (return-from a (lambda (x) (return-from a x))))) ) 3 )"
+    expect(-> lisp read blockb).to.throw("Obsolete continuation")
+
+    
