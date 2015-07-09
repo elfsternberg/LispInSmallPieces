@@ -20,18 +20,21 @@ class Value
 # continuation needs of conditional, sequence, etc...
 
 class Continuation
-  constructor: (@k) ->
-  invoke: (v, env, kont) ->
-    if nilp cdr v
-      @k.resume (car v)
+  constructor: (@kont) ->
+  invoke: (value, env, kont) ->
+    if nilp cdr value
+      @kont.resume (car value)
     else
       throw new LispInterpreterError "Continuations expect one argument"
+  unwind: (value, ktarget) ->
+    if (@kont == ktarget) then (@kont.resume value) else (@kont.unwind value, ktarget)
 
 # Abstract class representing the environment
 
 class Environment
   lookup: -> throw new LispInterpreterError "Nonspecific invocation"
   update: -> throw new LispInterpreterError "Nonspecific invocation"
+  blockLookup: -> throw new LispInterpreterError "Not an Environment"
 
 # Base of the environment stack.  If you hit this, your variable was
 # never found for lookup/update.  Note that at this time in the
@@ -40,6 +43,7 @@ class Environment
 class NullEnv extends Environment
   lookup: (e) -> throw new LispInterpreterError "Unknown variable #{e}"
   update: (e) -> throw new LispInterpreterError "Unknown variable #{e}"
+  blockLookup: (name) -> throw new LispInterpreterError "Unknown block label #{name}"
 
 # This appears to be an easy and vaguely abstract handle to the
 # environment.  The book is not clear on the distinction between the
@@ -52,6 +56,8 @@ class FullEnv extends Environment
     @others.lookup name, kont
   update: (name, kont, value) ->
     @others.update name, kont, value
+  blockLookup: (name, kont, value) ->
+    @others.blockLookup(name, kont, value)
 
 # This is the classic environment pair; either it's *this*
 # environment, or it's a parent environment, until you hit the
@@ -88,10 +94,10 @@ evaluateIf = (exps, env, kont) ->
   evaluate (car exps), env, new IfCont(kont, (cadr exps), (caddr exps), env)
 
 class IfCont extends Continuation
-  constructor: (@k, @ift, @iff, @env) ->
+  constructor: (@kont, @ift, @iff, @env) ->
     @_type = "IfCont"
   resume: (value) ->
-    evaluate (if value == the_false_value then @iff else @ift), @env, @k
+    evaluate (if value == the_false_value then @iff else @ift), @env, @kont
 
 # Sequences: evaluates the current expression with a continuation that
 # represents "the next expression" in the sequence.  Upon resumption,
@@ -107,9 +113,9 @@ evaluateBegin = (exps, env, kont) ->
     kont.resume("Begin empty value")
 
 class BeginCont extends Continuation
-  constructor: (@k, @exps, @env) ->
+  constructor: (@kont, @exps, @env) ->
     @_type = "BeginCont"
-  resume: (v) -> evaluateBegin (cdr @exps), @env, @k
+  resume: (v) -> evaluateBegin (cdr @exps), @env, @kont
 
 # In this continuation, we simply pass the continuation and the name
 # to the environment to look up.  The environment knows to call the
@@ -125,10 +131,10 @@ evaluateSet = (name, exp, env, kont) ->
   evaluate exp, env, (new SetCont(kont, name, env))
 
 class SetCont extends Continuation
-  constructor: (@k, @name, @env) ->
+  constructor: (@kont, @name, @env) ->
     @_type = "SetCont"
   resume: (value) ->
-    @env.update @name, @k, value
+    @env.update @name, @kont, value
 
 # Calls the current contunation, passing it a new function wrapper.
 
@@ -171,10 +177,10 @@ evaluateApplication = (exp, exps, env, kont) ->
   evaluate exp, env, (new EvFunCont kont, exps, env)
 
 class EvFunCont extends Continuation
-  constructor: (@k, @exp, @env) ->
+  constructor: (@kont, @exp, @env) ->
     @_type = "EvFunCont"
   resume: (f) ->
-    evaluateArguments @exp, @env, (new ApplyCont(@k, f, @env))
+    evaluateArguments @exp, @env, (new ApplyCont(@kont, f, @env))
 
 # Evaluate the first list, creating a new list of the arguments.  Upon
 # completion, resume the continuation with the gather phase
@@ -186,37 +192,64 @@ evaluateArguments = (exp, env, kont) ->
     kont.resume(nil)
 
 class ArgumentCont extends Continuation
-  constructor: (@k, @exp, @env) ->
+  constructor: (@kont, @exp, @env) ->
     @_type = "ArgumentCont"
   resume: (v) ->
-    evaluateArguments (cdr @exp), @env, (new GatherCont @k, v)
+    evaluateArguments (cdr @exp), @env, (new GatherCont @kont, v)
 
 # Gather the arguments as each ArgumentCont is resumed into a list to
 # be passed to our next step.
 
 class GatherCont extends Continuation
-  constructor: (@k, @v) ->
+  constructor: (@kont, @value) ->
     @_type = "GatherCont"
-  resume: (v) ->
-    @k.resume (cons @v, v)
+  resume: (value) ->
+    @kont.resume (cons @value, value)
 
 # Upon resumption, invoke the function.
 
 class ApplyCont extends Continuation
-  constructor: (@k, @fn, @env) ->
+  constructor: (@kont, @fn, @env) ->
     @_type = "ApplyCont"
-  resume: (v) ->
-    console.log
-    @fn.invoke v, @env, @k
+  resume: (value) ->
+    @fn.invoke value, @env, @kont
 
 # A special continuation that represents what we want the interpreter
 # to do when it's done processing.
 
 class BottomCont extends Continuation
-  constructor: (@k, @f) ->
+  constructor: (@kont, @func) ->
     @_type = "BottomCont"
+  resume: (value) ->
+    @func(value)
+  unwind: (value, ktarget) ->
+    throw new LispInterpreterError "Obsolete continuation"
+
+evaluateBlock = (label, body, env, kont) ->
+  k = new BlockCont(kont, label)
+  evaluateBegin body, (new BlockEnv env, label, kont), k
+
+class BlockCont extends Continuation
+  constructor: (@kont, @label) ->
+    @_type = "BlockCont"
+  resume: (value) ->
+    @kont.resume value
+
+class BlockEnv extends FullEnv
+  constructor: (@others, @name, @kont) ->
+  blockLookup: (name, kont, value) ->
+    if (name == @name)
+      kont.unwind value, @kont
+    else
+      @others.blockLookup(name, kont, value)
+
+evaluateReturnFrom = (label, form, env, kont) ->
+  evaluate form, env, (new ReturnFromCont kont, env, label)
+
+class ReturnFromCont extends Continuation
+  constructor: (@kont, @env, @label) ->
   resume: (v) ->
-    @f(v)
+    @env.blockLookup @label, @kont, v
 
 class Primitive extends Value
   constructor: (@name, @nativ) ->
@@ -247,6 +280,11 @@ evaluate = (e, env, kont) ->
         when "begin" then evaluateBegin (cdr exp), env, kont
         when "set!" then evaluateSet (nvalu cadr exp), (caddr exp), env, kont
         when "lambda" then evaluateLambda (astSymbolsToLispSymbols cadr exp), (cddr exp), env, kont
+        when "block" then evaluateBlock (nvalu cadr exp), (cddr exp), env, kont
+        when "return-from" then evaluateReturnFrom (nvalu cadr exp), (caddr exp), env, kont
+        when "catch" then evaluateCatch (cadr exp), (cddr exp), env, kont
+        when "throw" then evaluateThrow (cadr exp), (caddr exp), env, kont
+        when "unwind-protect" then evaluateUnwindProtect (cadr exp), (cddr exp), env, kont
         else evaluateApplication (car exp), (cdr exp), env, kont
     else
       evaluateApplication (car exp), (cdr exp), env, kont
