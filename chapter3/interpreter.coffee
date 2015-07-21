@@ -1,8 +1,10 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
+{normalizeForm} = require "../chapter1/astToList"
 readline = require "readline"
 {inspect} = require "util"
+minspect = (obj) -> inspect obj, false, null, true
 
 class LispInterpreterError extends Error
   name: 'LispInterpreterError'
@@ -28,6 +30,8 @@ class Continuation
       throw new LispInterpreterError "Continuations expect one argument"
   unwind: (value, ktarget) ->
     if (@kont == ktarget) then (@kont.resume value) else (@kont.unwind value, ktarget)
+  catchLookup: (tag, kk) ->
+    @kont.catchLookup tag, kk
 
 # Abstract class representing the environment
 
@@ -92,6 +96,7 @@ evaluateQuote = (v, env, kont) ->
 
 evaluateIf = (exps, env, kont) ->
   evaluate (car exps), env, new IfCont(kont, (cadr exps), (caddr exps), env)
+
 
 class IfCont extends Continuation
   constructor: (@kont, @ift, @iff, @env) ->
@@ -224,6 +229,8 @@ class BottomCont extends Continuation
     @func(value)
   unwind: (value, ktarget) ->
     throw new LispInterpreterError "Obsolete continuation"
+  catchLookup: (tag, kk) ->
+    throw new LispInterpreterError "No associated catch"
 
 evaluateBlock = (label, body, env, kont) ->
   k = new BlockCont(kont, label)
@@ -250,6 +257,47 @@ class ReturnFromCont extends Continuation
   constructor: (@kont, @env, @label) ->
   resume: (v) ->
     @env.blockLookup @label, @kont, v
+
+evaluateCatch = (tag, body, env, kont) ->
+  evaluate tag, env, (new CatchCont kont, body, env)
+
+class CatchCont extends Continuation
+  constructor: (@kont, @body, @env) ->
+  resume: (value) ->
+    console.log(value)
+    evaluateBegin @body, @env, (new LabeledCont @kont, normalizeForm car value)
+
+class LabeledCont extends Continuation
+  constructor: (@kont, @tag) ->
+  resume: (value) ->
+    @kont.resume value
+  catchLookup: (tag, kk) ->
+    if tag == @tag
+      console.log tag, @tag
+      evaluate kk.form, kk.env, (new ThrowingCont kk, tag, this)
+    else
+      @kont.catchLookup tag, kk
+
+class ThrowCont extends Continuation
+  constructor: (@kont, @form, @env) ->
+  resume: (value) ->
+    @catchLookup (normalizeForm car value), @
+  
+evaluateThrow = (tag, form, env, kont) ->
+  evaluate tag, env, (new ThrowCont kont, form, env)
+
+class ThrowingCont extends Continuation
+  constructor: (@kont, @tag, @resumecont) ->
+  resume: (value) ->
+    @resumecont.resume value
+
+evaluateUnwindProtect = (form, cleanup, env, kont) ->
+  evaluate form, env, (new UnwindProtectCont kont, cleanup, env)
+
+class UnwindProtectCont extends Continuation
+  constructor: (@kont, @cleanup, @env) ->
+  resume: (value) ->
+    evaluateBegin @cleanup, @env, (new ProtectReturnCont @kont, value)
 
 class Primitive extends Value
   constructor: (@name, @nativ) ->
@@ -302,8 +350,8 @@ defprimitive = (name, nativ, arity) ->
     vmargs = listToVector(args)
     if (vmargs.length == arity)
       kont.resume (nativ.apply null, vmargs)
-    else
-      throw new LispInterpreterError "Incorrect arity"
+    else 
+     throw new LispInterpreterError "Incorrect arity"
 
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
@@ -347,6 +395,12 @@ definitial "apply", new Primitive "apply", (values, env, kont) ->
       (flat = (args) ->
         if nilp (cdr args) then (car args) else (cons (car args), (flat cdr args)))(cdr values))()
     f.invoke args, env, kont
+
+definitial "funcall", new Primitive "funcall", (args, env, kont) ->
+    if not nilp cdr args
+      @kont.invoke (car args), (cdr args)
+    else
+      throw new LispInterpreterError "Invoke requires a function name and arguments"
 
 definitial "list", new Primitive "list", (values, env, kont) ->
   (values, env, kont) -> kont.resume(values)

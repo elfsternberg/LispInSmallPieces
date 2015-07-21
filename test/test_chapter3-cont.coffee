@@ -37,4 +37,60 @@ describe "Core interpreter #3: Blocks", ->
     blockb = "((block a (* 2 (block b (return-from a (lambda (x) (return-from a x))))) ) 3 )"
     expect(-> lisp read blockb).to.throw("Obsolete continuation")
 
-    
+describe "Core interpreter #3: Try/Catch", ->
+  it "doesn't change a simple value", ->
+    expect(lisp read "(catch 'bar 1)").to.equal(1)
+  it "doesn't interfere with standard behavior", ->
+    expect(lisp read "(catch 'bar 1 2 3)").to.equal(3)
+  it "bails at the top level when no catch", ->
+    expect(-> lisp read "(throw 'bar 33)").to.throw("No associated catch")
+  it "catches the right thing", ->
+    expect(lisp read "(catch 'bar (throw 'bar 11))").to.equal(11)
+  it "catches before the evaluation happens", ->
+    expect(lisp read "(catch 'bar (* 2 (throw 'bar 5)))").to.equal(5)
+  it "unrolls through multiple layers of the stack", ->
+    expect(lisp read "((lambda (f) (catch 'bar (* 2 (f 5))) ) (lambda (x) (throw 'bar x)))").to.equal(5)
+  it "continues at the right location", ->
+    expect(lisp read "((lambda (f) (catch 'bar (* 2 (catch 'bar (* 3 (f 5))))) ) (lambda (x) (throw 'bar x)))").to.equal(10)
+  it "throw/catch happens with unlabled catches", ->
+    expect(lisp read "(catch 2 (* 7 (catch 1 (* 3 (catch 2 (throw 1 (throw 2 5)) )) )))").to.equal(105)
+  it "bails at top level when there aren't enough catches", ->
+    expect(-> lisp read "(catch 2 (* 7 (throw 1 (throw 2 3))))").to.throw("no test")
+
+# describe "Core interpreter #3: Unwind-Protect", ->
+#   it "protects the value correctly", ->
+#     expect(lisp read "(unwind-protect 1 2").to.equal(1)
+#   it "", ->
+#     expect(lisp read "((lambda (c) (unwind-protect 1 (set! c 2)) c ) 0 ").to.equal(2)
+#   it "", ->
+#     expect(lisp read "((lambda (c) (catch 111 (* 2 (unwind-protect (* 3 (throw 111 5)) (set! c 1) ))) ) 0 ").to.equal(5)
+#   it "", ->
+#     expect(lisp read "((lambda (c) (catch 111 (* 2 (unwind-protect (* 3 (throw 111 5)) (set! c 1) ))) c ) 0 ").to.equal(1)
+#   it "", ->
+#     expect(lisp read "((lambda (c) (block A (* 2 (unwind-protect (* 3 (return-from A 5)) (set! c 1) ))) ) 0 ").to.equal(5)
+#   it "", ->
+#     expect(lisp read "((lambda (c) (block A (* 2 (unwind-protect (* 3 (return-from A 5)) (set! c 1) ))) c ) 0 ").to.equal(1)
+# 
+# 
+# describe "Core interpreter #3: Try/Catch with Throw as a function", ->
+#   contain = (fcall) ->
+#     return "(begin ((lambda () (begin (set! funcall (lambda (g . args) (apply g args))) #{fcall}))))"
+# 
+#   it "", ->
+#     expect(-> lisp read "(funcall throw 'bar 33").to.throw("bar")
+#   it "", ->
+#     expect(lisp read "(catch 'bar (funcall throw 'bar 11))").to.equal(11)
+#   it "", ->
+#     expect(lisp read "(catch 'bar (* 2 (funcall throw 'bar 5)))").to.equal(5)
+#   it "", ->in
+#     expect(lisp read "((lambda (f) (catch 'bar (* 2 (f 5))) ) (lambda (x) (funcall throw 'bar x))) ").to.equal(5)
+#   it "", ->
+#     expect(lisp read "((lambda (f) (catch 'bar (* 2 (catch 'bar (* 3 (f 5))))) ) (lambda (x) (funcall throw 'bar x)))) ").to.equal(10)
+#   it "", ->
+#     expect(lisp read "(catch 2 (* 7 (catch 1 (* 3 (catch 2 (funcall throw 1 (funcall throw 2 5)) )) ))) ").to.equal(105)
+#   it "", ->
+#     expect(lisp read "(catch 2 (* 7 (funcall throw 1 (funcall throw 2 3))))").to.equal(3)
+#  
+# 
+#  
+# 

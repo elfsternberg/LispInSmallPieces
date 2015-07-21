@@ -12,3 +12,4 @@ bin/coffee
 bin/cake
 test-reports.xml
 LisperatorLanguage
+chapter?/test.coffee
