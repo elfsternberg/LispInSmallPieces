@@ -1,5 +1,6 @@
 {car, cdr, cons, nil, nilp, pairp, vectorToList, list} = require 'cons-lists/lists'
 {inspect} = require "util"
+{Symbol, Comment} = require "./reader_types"
 
 
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
@@ -28,17 +29,19 @@ class Source
 
   done: -> @index > @max
 
+mkNode = (obj) -> Object.defineProperty obj, '__node', {value: true}
+
 # IO -> IO
 skipWS = (inStream) ->
   while inStream.peek() in WHITESPACE then inStream.next()
 
 # (type, value, line, column) -> (node {type, value, line, column)}
-makeObj = (type, value, line, column) ->
-  list(type, value, line, column)
+mkObj = (type, value, line, column) ->
+  mkNode list type, value, line, column
 
 # msg -> (IO -> Node => Error)
 handleError = (message) ->
-  (line, column) -> makeObj('error', message, line, column)
+  (line, column) -> mkObj('error', message, line, column)
 
 # IO -> Node => Comment
 readComment = (inStream) ->
@@ -47,7 +50,7 @@ readComment = (inStream) ->
     inStream.next()).join("")
   if not inStream.done()
     inStream.next()
-  makeObj 'comment', r, line, column
+  mkObj 'comment', (new Comment r), line, column
 
 # IO -> (Node => Literal => String) | Error
 readString = (inStream) ->
@@ -60,7 +63,7 @@ readString = (inStream) ->
   if inStream.done()
     return handleError("end of file seen before end of string.")(line, column)
   inStream.next()
-  makeObj 'string', (string.join ''), line, column
+  mkObj 'string', (string.join ''), line, column
 
 # (String) -> (Node => Literal => Number) | Nothing
 readMaybeNumber = (symbol) ->
@@ -86,8 +89,8 @@ readSymbol = (inStream, tableKeys) ->
     inStream.next()).join ''
   number = readMaybeNumber symbol
   if number?
-    return makeObj 'number', number, line, column
-  makeObj 'symbol', symbol, line, column
+    return mkObj 'number', number, line, column
+  mkObj 'symbol', (new Symbol symbol), line, column
 
 
 # (Delim, TypeName) -> IO -> (IO, node) | Error
@@ -99,7 +102,7 @@ makeReadPair = (delim, type) ->
     [line, column] = inStream.position()
     if inStream.peek() == delim
       inStream.next()
-      return makeObj(type, nil, line, column)
+      return mkObj(type, nil, line, column)
 
     # IO -> (IO, Node) | Error
     dotted = false
@@ -112,12 +115,12 @@ makeReadPair = (delim, type) ->
       if inStream.done() then return handleError("Unexpected end of input")(line, column)
       if dotted then return handleError("More than one symbol after dot")
       return obj if (car obj) == 'error'
-      if (car obj) == 'symbol' and (car cdr obj) == '.'
+      if (car obj) == 'symbol' and (car cdr obj).v == '.'
         dotted = true
         return readEachPair inStream
       cons obj, readEachPair inStream
 
-    ret = makeObj type, readEachPair(inStream), line, column
+    ret = mkObj type, readEachPair(inStream), line, column
     inStream.next()
     ret
 
@@ -130,7 +133,7 @@ prefixReader = (type) ->
     [line1, column1] = inStream.position()
     obj = read inStream, true, null, true
     return obj if (car obj) == 'error'
-    makeObj "list", cons((makeObj("symbol", type, line1, column1)), cons(obj)), line, column
+    mkObj "list", cons((mkObj("symbol", type, line1, column1)), cons(obj)), line, column
 
 # I really wanted to make anything more complex than a list (like an
 # object or a vector) something handled by a read macro.  Maybe in a
@@ -200,7 +203,7 @@ readForms = (inStream) ->
     cons obj, readEach inStream
 
   obj = readEach inStream
-  if (car obj) == 'error' then obj else makeObj "list", obj, line, column
+  if (car obj) == 'error' then obj else mkObj "list", obj, line, column
 
 exports.read = read
 exports.readForms = readForms

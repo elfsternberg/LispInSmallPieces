@@ -264,7 +264,6 @@ evaluateCatch = (tag, body, env, kont) ->
 class CatchCont extends Continuation
   constructor: (@kont, @body, @env) ->
   resume: (value) ->
-    console.log(value)
     evaluateBegin @body, @env, (new LabeledCont @kont, normalizeForm car value)
 
 class LabeledCont extends Continuation
