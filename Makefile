@@ -24,7 +24,7 @@ test: clean node_modules
 		--reporter mocha-jenkins-reporter --compilers coffee:coffee-script/register || true
 
 ltest: node_modules
-	@node_modules/.bin/mocha --compilers coffee:coffee-script/register
+	node_modules/.bin/mocha --compilers coffee:coffee-script/register
 
 watch:
 	while inotifywait $(SOURCES) ; do make test; done
