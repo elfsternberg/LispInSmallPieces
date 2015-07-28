@@ -3,15 +3,13 @@
  metacadr, setcar} = require "cons-lists/lists"
 {normalizeForm} = require "../chapter1/astToList"
 readline = require "readline"
+{Symbol} = require '../chapter1/reader_types'
 {inspect} = require "util"
 minspect = (obj) -> inspect obj, false, null, true
 
 class LispInterpreterError extends Error
   name: 'LispInterpreterError'
   constructor: (@message) ->
-
-ntype = (node) -> car node
-nvalu = (node) -> cadr node
 
 the_false_value = (cons "false", "boolean")
 
@@ -304,39 +302,6 @@ class Primitive extends Value
   invoke: (args, env, kont) ->
     @nativ.apply null, [args, env, kont]
 
-astSymbolsToLispSymbols = (node) ->
-  return nil if nilp node
-  throw (new LispInterpreterError "Not a list of variable names") if not (ntype(node) is 'list')
-  handler = (node) ->
-    return nil if nilp node
-    cons (nvalu car node), (handler cdr node)
-  handler(nvalu node)
-
-evaluate = (e, env, kont) ->
-  [type, exp] = [(ntype e), (nvalu e)]
-  if type == "symbol"
-    return evaluateVariable exp, env, kont
-  if type in ["number", "string", "boolean", "vector"]
-    return kont.resume exp
-  if type == "list"
-    head = car exp
-    if (ntype head) == 'symbol'
-      switch (nvalu head)
-        when "quote" then evaluateQuote (cdr exp), env, kont
-        when "if" then evaluateIf (cdr exp), env, kont
-        when "begin" then evaluateBegin (cdr exp), env, kont
-        when "set!" then evaluateSet (nvalu cadr exp), (caddr exp), env, kont
-        when "lambda" then evaluateLambda (astSymbolsToLispSymbols cadr exp), (cddr exp), env, kont
-        when "block" then evaluateBlock (nvalu cadr exp), (cddr exp), env, kont
-        when "return-from" then evaluateReturnFrom (nvalu cadr exp), (caddr exp), env, kont
-        when "catch" then evaluateCatch (cadr exp), (cddr exp), env, kont
-        when "throw" then evaluateThrow (cadr exp), (caddr exp), env, kont
-        when "unwind-protect" then evaluateUnwindProtect (cadr exp), (cddr exp), env, kont
-        else evaluateApplication (car exp), (cdr exp), env, kont
-    else
-      evaluateApplication (car exp), (cdr exp), env, kont
-  else
-    throw new LispInterpreterError("Can't handle a '#{type}'")
 
 env_init = new NullEnv()
 
@@ -403,6 +368,73 @@ definitial "funcall", new Primitive "funcall", (args, env, kont) ->
 
 definitial "list", new Primitive "list", (values, env, kont) ->
   (values, env, kont) -> kont.resume(values)
+
+# Only called in rich node mode...
+
+astSymbolsToLispSymbols = (node) ->
+  nvalu = (node) -> cadr node
+  return nil if nilp node
+  throw (new LispInterpreterError "Not a list of variable names") if not ((car node) is 'list')
+  handler = (node) ->
+    return nil if nilp node
+    cons (nvalu car node).v, (handler cdr node)
+  handler(nvalu node)
+
+metadata_evaluation =
+  listp:     (node) -> (car node) == 'list'
+  symbolp:   (node) -> (car node) == 'symbol'
+  numberp:   (node) -> (car node) == 'number'
+  stringp:   (node) -> (car node) == 'string'
+  nvalu:     (node) -> cadr node
+  mksymbols: astSymbolsToLispSymbols
+
+straight_evaluation = 
+  listp:     (node) -> node.__type == 'list'
+  symbolp:   (node) -> node instanceof Symbol
+  commentp:  (node) -> node instanceof Comment
+  numberp:   (node) -> typeof node == 'number'
+  stringp:   (node) -> typeof node == 'string'
+  boolp:     (node) -> typeof node == 'boolean'
+  nullp:     (node) -> node == null
+  vectorp:   (node) -> (not straight_evaluation.listp node) and toString.call(node) == '[object Array]'
+  recordp:   (node) -> (not node._prototype?) and toSTring.call(node) == '[object Object]'
+  objectp:   (node) -> (node._prototype?) and toString.call(node) == '[object Object]'
+  nilp:      (node) -> nilp(node)
+  nvalu:     (node) -> node
+  mksymbols: (node) -> node
+
+makeEvaluator = (ix = straight_evaluation, ty="straight") ->
+  (exp, env, kont) ->
+    if ix.symbolp exp
+      return evaluateVariable (ix.nvalu exp).v, env, kont
+    else if ([ix.numberp, ix.stringp].filter (i) -> i(exp)).length > 0
+      return kont.resume ix.nvalu exp
+    else if ix.listp exp
+      body = ix.nvalu exp
+      head = car body
+      if ix.symbolp head
+        switch (ix.nvalu head).v
+          when "quote" then evaluateQuote (cdr body), env, kont
+          when "if" then evaluateIf (cdr body), env, kont
+          when "begin" then evaluateBegin (cdr body), env, kont
+          when "set!" then evaluateSet (ix.nvalu cadr body).v, (caddr body), env, kont
+          when "lambda" then evaluateLambda (ix.mksymbols cadr body), (cddr body), env, kont
+          when "block" then evaluateBlock (ix.nvalu cadr body), (cddr body), env, kont
+          when "return-from" then evaluateReturnFrom (ix.nvalu cadr body), (caddr body), env, kont
+          when "catch" then evaluateCatch (cadr body), (cddr body), env, kont
+          when "throw" then evaluateThrow (cadr body), (caddr body), env, kont
+          when "unwind-protect" then evaluateUnwindProtect (cadr body), (cddr body), env, kont
+          else evaluateApplication (car body), (cdr body), env, kont
+      else
+        evaluateApplication (car body), (cdr body), env, kont
+    else
+      throw new LispInterpreterError("Can't handle a '#{type}'")
+  
+nodeEval = makeEvaluator(metadata_evaluation, "node")
+lispEval = makeEvaluator(straight_evaluation, "lisp")
+
+evaluate = (exp, env, kont) ->
+  (if exp? and exp.__node then nodeEval else lispEval)(exp, env, kont)
 
 interpreter = (ast, kont) ->
   evaluate ast, env_init, new BottomCont null, kont
