@@ -2,16 +2,16 @@
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
 {normalizeForm} = require "../chapter1/astToList"
-readline = require "readline"
-{Symbol} = require '../chapter1/reader_types'
-{inspect} = require "util"
-minspect = (obj) -> inspect obj, false, null, true
+{Node} = require '../chapter1/reader_types'
 
 class LispInterpreterError extends Error
   name: 'LispInterpreterError'
   constructor: (@message) ->
 
 the_false_value = (cons "false", "boolean")
+
+# Base class that represents a value.  Base class representing a LiSP
+# value, a primitive, or a function
 
 class Value
 
@@ -302,7 +302,6 @@ class Primitive extends Value
   invoke: (args, env, kont) ->
     @nativ.apply null, [args, env, kont]
 
-
 env_init = new NullEnv()
 
 definitial = (name, value = nil) ->
@@ -372,52 +371,52 @@ definitial "list", new Primitive "list", (values, env, kont) ->
 # Only called in rich node mode...
 
 astSymbolsToLispSymbols = (node) ->
-  nvalu = (node) -> cadr node
   return nil if nilp node
-  throw (new LispInterpreterError "Not a list of variable names") if not ((car node) is 'list')
-  handler = (node) ->
-    return nil if nilp node
-    cons (nvalu car node).v, (handler cdr node)
-  handler(nvalu node)
+  throw (new LispInterpreterError "Not a list of variable names") if not node.type == 'list'
+  handler = (cell) ->
+    return nil if nilp cell
+    cons (car cell).value, (handler cdr cell)
+  handler node.value
 
 metadata_evaluation =
-  listp:     (node) -> (car node) == 'list'
-  symbolp:   (node) -> (car node) == 'symbol'
-  numberp:   (node) -> (car node) == 'number'
-  stringp:   (node) -> (car node) == 'string'
-  nvalu:     (node) -> cadr node
-  mksymbols: astSymbolsToLispSymbols
+  listp:     (node) -> node.type == 'list'
+  symbolp:   (node) -> node.type == 'symbol'
+  numberp:   (node) -> node.type == 'number'
+  stringp:   (node) -> node.type == 'string'
+  commentp:  (node) -> node.type == 'comment'
+  nvalu:     (node) -> node.value
+  mksymbols: (list) -> astSymbolsToLispSymbols(list)
 
 straight_evaluation = 
-  listp:     (node) -> node.__type == 'list'
-  symbolp:   (node) -> node instanceof Symbol
-  commentp:  (node) -> node instanceof Comment
-  numberp:   (node) -> typeof node == 'number'
-  stringp:   (node) -> typeof node == 'string'
-  boolp:     (node) -> typeof node == 'boolean'
-  nullp:     (node) -> node == null
-  vectorp:   (node) -> (not straight_evaluation.listp node) and toString.call(node) == '[object Array]'
-  recordp:   (node) -> (not node._prototype?) and toSTring.call(node) == '[object Object]'
-  objectp:   (node) -> (node._prototype?) and toString.call(node) == '[object Object]'
-  nilp:      (node) -> nilp(node)
-  nvalu:     (node) -> node
-  mksymbols: (node) -> node
+  listp:     (cell) -> cell.__type == 'list'
+  symbolp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] not in ["\"", ";"]
+  commentp:  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"
+  numberp:   (cell) -> typeof cell == 'number'
+  stringp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == "\""
+  boolp:     (cell) -> typeof cell == 'boolean'
+  nullp:     (cell) -> cell == null
+  vectorp:   (cell) -> (not straight_evaluation.listp cell) and toString.call(cell) == '[object Array]'
+  recordp:   (cell) -> (not cell._prototype?) and toSTring.call(cell) == '[object Object]'
+  objectp:   (cell) -> (cell._prototype?) and toString.call(cell) == '[object Object]'
+  nilp:      (cell) -> nilp(cell)
+  nvalu:     (cell) -> cell
+  mksymbols: (cell) -> cell
 
 makeEvaluator = (ix = straight_evaluation, ty="straight") ->
   (exp, env, kont) ->
     if ix.symbolp exp
-      return evaluateVariable (ix.nvalu exp).v, env, kont
+      return evaluateVariable (ix.nvalu exp), env, kont
     else if ([ix.numberp, ix.stringp].filter (i) -> i(exp)).length > 0
       return kont.resume ix.nvalu exp
     else if ix.listp exp
       body = ix.nvalu exp
       head = car body
       if ix.symbolp head
-        switch (ix.nvalu head).v
+        switch (ix.nvalu head)
           when "quote" then evaluateQuote (cdr body), env, kont
           when "if" then evaluateIf (cdr body), env, kont
           when "begin" then evaluateBegin (cdr body), env, kont
-          when "set!" then evaluateSet (ix.nvalu cadr body).v, (caddr body), env, kont
+          when "set!" then evaluateSet (ix.nvalu cadr body), (caddr body), env, kont
           when "lambda" then evaluateLambda (ix.mksymbols cadr body), (cddr body), env, kont
           when "block" then evaluateBlock (ix.nvalu cadr body), (cddr body), env, kont
           when "return-from" then evaluateReturnFrom (ix.nvalu cadr body), (caddr body), env, kont
@@ -434,7 +433,7 @@ nodeEval = makeEvaluator(metadata_evaluation, "node")
 lispEval = makeEvaluator(straight_evaluation, "lisp")
 
 evaluate = (exp, env, kont) ->
-  (if exp? and exp.__node then nodeEval else lispEval)(exp, env, kont)
+  (if exp? and (exp instanceof Node) then nodeEval else lispEval)(exp, env, kont)
 
 interpreter = (ast, kont) ->
   evaluate ast, env_init, new BottomCont null, kont

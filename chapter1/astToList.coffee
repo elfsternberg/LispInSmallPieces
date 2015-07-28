@@ -1,7 +1,6 @@
 {car, cdr, cons, listp, nilp, nil,
  list, pairp, listToString} = require 'cons-lists/lists'
-{aSymbol, aValue, astObject} = require './astAccessors'
-{Symbol} = require './reader_types'
+{astObject} = require './astAccessors'
 
 # RICH_AST -> LISP_AST
 
@@ -26,7 +25,7 @@ normalizeForm = (form) ->
     'record': (atom) -> listToRecord1(atom)
 
     # Basic native types.  Meh.
-    'symbol': (a) -> a.v
+    'symbol': id
     'number': id
     'string': (atom) -> atom
     'nil': (atom) -> nil
@@ -37,7 +36,7 @@ normalizeForm = (form) ->
     'null': (atom) -> null
     'undefined': (atom) -> undefined
 
-  methods[(car form)](car cdr form)
+  methods[form.type](form.value)
 
 
 normalizeForms = (forms) ->

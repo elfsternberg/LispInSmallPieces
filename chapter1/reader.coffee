@@ -1,7 +1,6 @@
 {car, cdr, cons, nil, nilp, pairp, vectorToList, list} = require 'cons-lists/lists'
 {inspect} = require "util"
-{Symbol, Comment} = require "./reader_types"
-
+{Node, Comment} = require "./reader_types"
 
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
 WHITESPACE = [" ", "\t"].concat(NEWLINES)
@@ -29,19 +28,13 @@ class Source
 
   done: -> @index > @max
 
-mkNode = (obj) -> Object.defineProperty obj, '__node', {value: true}
-
 # IO -> IO
 skipWS = (inStream) ->
   while inStream.peek() in WHITESPACE then inStream.next()
 
-# (type, value, line, column) -> (node {type, value, line, column)}
-mkObj = (type, value, line, column) ->
-  mkNode list type, value, line, column
-
 # msg -> (IO -> Node => Error)
 handleError = (message) ->
-  (line, column) -> mkObj('error', message, line, column)
+  (line, column) -> new Node('error', message, line, column)
 
 # IO -> Node => Comment
 readComment = (inStream) ->
@@ -50,7 +43,7 @@ readComment = (inStream) ->
     inStream.next()).join("")
   if not inStream.done()
     inStream.next()
-  mkObj 'comment', (new Comment r), line, column
+  new Node 'comment', (new Comment r), line, column
 
 # IO -> (Node => Literal => String) | Error
 readString = (inStream) ->
@@ -63,7 +56,7 @@ readString = (inStream) ->
   if inStream.done()
     return handleError("end of file seen before end of string.")(line, column)
   inStream.next()
-  mkObj 'string', (string.join ''), line, column
+  new Node 'string', (string.join ''), line, column
 
 # (String) -> (Node => Literal => Number) | Nothing
 readMaybeNumber = (symbol) ->
@@ -89,8 +82,8 @@ readSymbol = (inStream, tableKeys) ->
     inStream.next()).join ''
   number = readMaybeNumber symbol
   if number?
-    return mkObj 'number', number, line, column
-  mkObj 'symbol', (new Symbol symbol), line, column
+    return new Node 'number', number, line, column
+  new Node 'symbol', symbol, line, column
 
 
 # (Delim, TypeName) -> IO -> (IO, node) | Error
@@ -102,7 +95,7 @@ makeReadPair = (delim, type) ->
     [line, column] = inStream.position()
     if inStream.peek() == delim
       inStream.next()
-      return mkObj(type, nil, line, column)
+      return new Node type, nil, line, column
 
     # IO -> (IO, Node) | Error
     dotted = false
@@ -114,13 +107,13 @@ makeReadPair = (delim, type) ->
         return cons obj, nil
       if inStream.done() then return handleError("Unexpected end of input")(line, column)
       if dotted then return handleError("More than one symbol after dot")
-      return obj if (car obj) == 'error'
-      if (car obj) == 'symbol' and (car cdr obj).v == '.'
+      return obj if obj.type == 'error'
+      if obj.type == 'symbol' and obj.value == '.'
         dotted = true
         return readEachPair inStream
       cons obj, readEachPair inStream
 
-    ret = mkObj type, readEachPair(inStream), line, column
+    ret = new Node type, readEachPair(inStream), line, column
     inStream.next()
     ret
 
@@ -132,8 +125,8 @@ prefixReader = (type) ->
     inStream.next()
     [line1, column1] = inStream.position()
     obj = read inStream, true, null, true
-    return obj if (car obj) == 'error'
-    mkObj "list", cons((mkObj("symbol", type, line1, column1)), cons(obj)), line, column
+    return obj if obj.type == 'error'
+    new Node "list", cons((new Node("symbol", type, line1, column1)), cons(obj)), line, column
 
 # I really wanted to make anything more complex than a list (like an
 # object or a vector) something handled by a read macro.  Maybe in a
@@ -180,7 +173,7 @@ read = (inStream, eofErrorP = false, eofError = EOF, recursiveP = false, inReadM
 
   while true
     form = matcher inStream, c
-    skip = (not nilp form) and (car form == 'comment') and not keepComments
+    skip = (not nilp form) and (form.type == 'comment') and not keepComments
     break if (not skip and not nilp form) or inStream.done()
     c = inStream.peek()
     null
@@ -199,11 +192,13 @@ readForms = (inStream) ->
   readEach = (inStream) ->
     obj = read inStream, true, null, false
     return nil if (nilp obj)
-    return obj if (car obj) == 'error'
+    return obj if obj.type == 'error'
     cons obj, readEach inStream
 
   obj = readEach inStream
-  if (car obj) == 'error' then obj else mkObj "list", obj, line, column
+  if obj.type == 'error' then obj else new Node "list", obj, line, column
 
 exports.read = read
 exports.readForms = readForms
+exports.Node = Node
+exports.Symbol = Symbol

@@ -24,6 +24,7 @@ describe "Core reader functions", ->
     ['[]', []]
     ['{}', {}]
     ['[1 2 3]', [1, 2, 3]]
+    # ['(1 2 3', 'error']
     ['{foo "bar"}', {foo: "bar"}]
   ]
 
