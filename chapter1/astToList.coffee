@@ -1,11 +1,13 @@
 {car, cdr, cons, listp, nilp, nil,
  list, pairp, listToString} = require 'cons-lists/lists'
 {astObject} = require './astAccessors'
+{Symbol} = require './reader_types'
 
 # RICH_AST -> LISP_AST
 
 normalizeForm = (form) ->
-
+  console.log(form)
+  
   listToRecord1 = (l) ->
     o = Object.create(null)
     while(l != nil)
@@ -25,9 +27,9 @@ normalizeForm = (form) ->
     'record': (atom) -> listToRecord1(atom)
 
     # Basic native types.  Meh.
-    'symbol': id
+    'symbol': new Symbol(id)
     'number': id
-    'string': (atom) -> atom
+    'string': id
     'nil': (atom) -> nil
 
     # Values inherited from the VM.

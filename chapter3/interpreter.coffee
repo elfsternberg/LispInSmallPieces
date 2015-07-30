@@ -1,7 +1,7 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
-{normalizeForm} = require "../chapter1/astToList"
+{normalizeForms, normalizeForm} = require "../chapter1/astToList"
 {Node} = require '../chapter1/reader_types'
 
 class LispInterpreterError extends Error
@@ -86,7 +86,7 @@ class VariableEnv extends FullEnv
 # quoted term uninterpreted.
 
 evaluateQuote = (v, env, kont) ->
-  kont.resume v
+  kont.resume normalizeForms v
 
 # Evaluates the conditional expression, creating a continuation with
 # the current environment that, when resumed, evaluates either the

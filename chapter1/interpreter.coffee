@@ -1,6 +1,5 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr,
  cdar, cadr, caadr, cadar, caddr, nilp, nil, setcdr, metacadr} = require "cons-lists/lists"
-readline = require "readline"
 {Node} = require "./reader_types"
 
 class LispInterpreterError extends Error
