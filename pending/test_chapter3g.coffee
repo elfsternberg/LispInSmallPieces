@@ -38,7 +38,7 @@ describe "Core interpreter #3: Try/Catch with Throw as a function", ->
     expect(lisp read "(catch 'bar (funcall throw 'bar 11))").to.equal(11)
   it "", ->
     expect(lisp read "(catch 'bar (* 2 (funcall throw 'bar 5)))").to.equal(5)
-  it "", ->in
+  it "", ->
     expect(lisp read "((lambda (f) (catch 'bar (* 2 (f 5))) ) (lambda (x) (funcall throw 'bar x))) ").to.equal(5)
   it "", ->
     expect(lisp read "((lambda (f) (catch 'bar (* 2 (catch 'bar (* 3 (f 5))))) ) (lambda (x) (funcall throw 'bar x)))) ").to.equal(10)
