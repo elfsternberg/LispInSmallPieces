@@ -44,7 +44,7 @@ describe "Core interpreter #3: Try/Catch", ->
     expect(lisp read "(catch 'bar 1 2 3)").to.equal(3)
   it "bails at the top level when no catch", ->
     expect(-> lisp read "(throw 'bar 33)").to.throw("No associated catch")
-  it "catches the right thing", ->
+  it "catches the throws value", ->
     expect(lisp read "(catch 'bar (throw 'bar 11))").to.equal(11)
   it "catches before the evaluation happens", ->
     expect(lisp read "(catch 'bar (* 2 (throw 'bar 5)))").to.equal(5)
@@ -52,14 +52,14 @@ describe "Core interpreter #3: Try/Catch", ->
     expect(lisp read "((lambda (f) (catch 'bar (* 2 (f 5))) ) (lambda (x) (throw 'bar x)))").to.equal(5)
   it "continues at the right location", ->
     expect(lisp read "((lambda (f) (catch 'bar (* 2 (catch 'bar (* 3 (f 5))))) ) (lambda (x) (throw 'bar x)))").to.equal(10)
-  it "throw/catch happens with unlabled catches", ->
+  it "throw/catch happens with literalally catches", ->
     expect(lisp read "(catch 2 (* 7 (catch 1 (* 3 (catch 2 (throw 1 (throw 2 5)) )) )))").to.equal(105)
   it "bails at top level when there aren't enough catches", ->
-    expect(-> lisp read "(catch 2 (* 7 (throw 1 (throw 2 3))))").to.throw("no test")
+    expect(-> lisp read "(catch 2 (* 7 (throw 1 (throw 2 3))))").to.throw("No associated catch")
 
-# describe "Core interpreter #3: Unwind-Protect", ->
-#   it "protects the value correctly", ->
-#     expect(lisp read "(unwind-protect 1 2").to.equal(1)
+#describe "Core interpreter #3: Unwind-Protect", ->
+#  it "protects the value correctly", ->
+#    expect(lisp read "(unwind-protect 1 2").to.equal(1)
 #   it "", ->
 #     expect(lisp read "((lambda (c) (unwind-protect 1 (set! c 2)) c ) 0 ").to.equal(2)
 #   it "", ->

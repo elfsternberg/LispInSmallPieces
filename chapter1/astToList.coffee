@@ -6,7 +6,6 @@
 # RICH_AST -> LISP_AST
 
 normalizeForm = (form) ->
-  console.log(form)
   
   listToRecord1 = (l) ->
     o = Object.create(null)
@@ -27,7 +26,7 @@ normalizeForm = (form) ->
     'record': (atom) -> listToRecord1(atom)
 
     # Basic native types.  Meh.
-    'symbol': new Symbol(id)
+    'symbol': (id) -> new Symbol(id)
     'number': id
     'string': id
     'nil': (atom) -> nil

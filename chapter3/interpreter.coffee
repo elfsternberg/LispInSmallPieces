@@ -2,7 +2,7 @@
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
 {normalizeForms, normalizeForm} = require "../chapter1/astToList"
-{Node} = require '../chapter1/reader_types'
+{Node, Symbol} = require '../chapter1/reader_types'
 
 class LispInterpreterError extends Error
   name: 'LispInterpreterError'
@@ -12,6 +12,11 @@ the_false_value = (cons "false", "boolean")
 
 # Base class that represents a value.  Base class representing a LiSP
 # value, a primitive, or a function
+
+eq = (id1, id2) ->
+  if id1 instanceof Symbol and id2 instanceof Symbol
+    return id1.name == id2.name
+  id1 == id2
 
 class Value
 
@@ -262,15 +267,14 @@ evaluateCatch = (tag, body, env, kont) ->
 class CatchCont extends Continuation
   constructor: (@kont, @body, @env) ->
   resume: (value) ->
-    evaluateBegin @body, @env, (new LabeledCont @kont, normalizeForm car value)
+    evaluateBegin @body, @env, (new LabeledCont @kont, value)
 
 class LabeledCont extends Continuation
   constructor: (@kont, @tag) ->
   resume: (value) ->
     @kont.resume value
   catchLookup: (tag, kk) ->
-    if tag == @tag
-      console.log tag, @tag
+    if eq tag, @tag
       evaluate kk.form, kk.env, (new ThrowingCont kk, tag, this)
     else
       @kont.catchLookup tag, kk
@@ -278,7 +282,7 @@ class LabeledCont extends Continuation
 class ThrowCont extends Continuation
   constructor: (@kont, @form, @env) ->
   resume: (value) ->
-    @catchLookup (normalizeForm car value), @
+    @catchLookup value, @
   
 evaluateThrow = (tag, form, env, kont) ->
   evaluate tag, env, (new ThrowCont kont, form, env)
@@ -322,6 +326,9 @@ defpredicate = (name, nativ, arity) ->
 definitial "#t", true
 definitial "#f", the_false_value
 definitial "nil", nil
+
+# FIXME: All of these things dereference to the same value!!!!
+
 for i in [
   "x", "y", "z", "a", "b", "c", "foo", "bar", "hux",
   "fib", "fact", "visit", "primes", "length"]
@@ -413,7 +420,7 @@ makeEvaluator = (ix = straight_evaluation, ty="straight") ->
       head = car body
       if ix.symbolp head
         switch (ix.nvalu head)
-          when "quote" then evaluateQuote (cdr body), env, kont
+          when "quote" then evaluateQuote (cadr body), env, kont
           when "if" then evaluateIf (cdr body), env, kont
           when "begin" then evaluateBegin (cdr body), env, kont
           when "set!" then evaluateSet (ix.nvalu cadr body), (caddr body), env, kont
