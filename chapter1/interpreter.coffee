@@ -133,7 +133,7 @@ metadata_evaluation =
   nvalu:     (node) -> node.value
   mksymbols: (list) -> astSymbolsToLispSymbols(list)
 
-straight_evaluation = 
+straight_evaluation =
   listp:     (cell) -> cell.__type == 'list'
   symbolp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] not in ["\"", ";"]
   commentp:  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"

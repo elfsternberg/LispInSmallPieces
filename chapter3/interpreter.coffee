@@ -317,8 +317,8 @@ defprimitive = (name, nativ, arity) ->
     vmargs = listToVector(args)
     if (vmargs.length == arity)
       kont.resume (nativ.apply null, vmargs)
-    else 
-     throw new LispInterpreterError "Incorrect arity"
+    else
+      throw new LispInterpreterError "Incorrect arity"
 
 defpredicate = (name, nativ, arity) ->
   defprimitive name, ((a, b) -> if nativ.call(null, a, b) then true else the_false_value), arity
@@ -367,10 +367,10 @@ definitial "apply", new Primitive "apply", (values, env, kont) ->
     f.invoke args, env, kont
 
 definitial "funcall", new Primitive "funcall", (args, env, kont) ->
-    if not nilp cdr args
-      @kont.invoke (car args), (cdr args)
-    else
-      throw new LispInterpreterError "Invoke requires a function name and arguments"
+  if not nilp cdr args
+    @kont.invoke (car args), (cdr args)
+  else
+    throw new LispInterpreterError "Invoke requires a function name and arguments"
 
 definitial "list", new Primitive "list", (values, env, kont) ->
   (values, env, kont) -> kont.resume(values)
@@ -394,7 +394,7 @@ metadata_evaluation =
   nvalu:     (node) -> node.value
   mksymbols: (list) -> astSymbolsToLispSymbols(list)
 
-straight_evaluation = 
+straight_evaluation =
   listp:     (cell) -> cell.__type == 'list'
   symbolp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] not in ["\"", ";"]
   commentp:  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"

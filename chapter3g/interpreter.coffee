@@ -32,9 +32,11 @@ class Continuation
     else
       throw new LispInterpreterError "Continuations expect one argument"
   unwind: (value, ktarget) ->
-    if (@kont == ktarget) then (@kont.resume value) else (@kont.unwind value, ktarget)
+    if (@ == ktarget) then (@kont.resume value) else (@kont.unwind value, ktarget)
   catchLookup: (tag, kk) ->
     @kont.catchLookup tag, kk
+  resume: (value) ->
+    throw new LispInterpreterError "Wrong continuation for #{@_type}"
 
 # Abstract class representing the environment
 
@@ -258,6 +260,7 @@ evaluateReturnFrom = (label, form, env, kont) ->
 
 class ReturnFromCont extends Continuation
   constructor: (@kont, @env, @label) ->
+    @_type = "ReturnFromCont"
   resume: (v) ->
     @env.blockLookup @label, @kont, v
 
@@ -266,11 +269,13 @@ evaluateCatch = (tag, body, env, kont) ->
 
 class CatchCont extends Continuation
   constructor: (@kont, @body, @env) ->
+    @_type = "CatchFromCont"
   resume: (value) ->
     evaluateBegin @body, @env, (new LabeledCont @kont, value)
 
 class LabeledCont extends Continuation
   constructor: (@kont, @tag) ->
+    @_type = "LabeledFromCont"
   resume: (value) ->
     @kont.resume value
   catchLookup: (tag, kk) ->
@@ -281,6 +286,7 @@ class LabeledCont extends Continuation
 
 class ThrowCont extends Continuation
   constructor: (@kont, @form, @env) ->
+    @_type = "ThrowCont"
   resume: (value) ->
     @catchLookup value, @
   
@@ -289,17 +295,21 @@ evaluateThrow = (tag, form, env, kont) ->
 
 class UnwindCont extends Continuation
   constructor: (@kont, @value, @target) ->
-    
+  resume: (value) ->
+    @kont.unwind @value, @target
+
 class ThrowingCont extends Continuation
   constructor: (@kont, @tag, @resumecont) ->
+    @_type = "ThrowingCont"
   resume: (value) ->
-    @kont.unwind @resumecont.resume value
+    @kont.unwind value, @resumecont
 
 evaluateUnwindProtect = (form, cleanup, env, kont) ->
   evaluate form, env, (new UnwindProtectCont kont, cleanup, env)
 
 class UnwindProtectCont extends Continuation
   constructor: (@kont, @cleanup, @env) ->
+    @_type = "UnwindProtectCont"
   resume: (value) ->
     evaluateBegin @cleanup, @env, (new ProtectReturnCont @kont, value)
   unwind: (value, target) ->
@@ -307,6 +317,7 @@ class UnwindProtectCont extends Continuation
 
 class ProtectReturnCont extends Continuation
   constructor: (@kont, @value) ->
+    @_type = "ProtectReturnCont"
   resume: (value) ->
     @kont.resume @value
 
