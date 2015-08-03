@@ -239,7 +239,7 @@ class BottomCont extends Continuation
 
 evaluateBlock = (label, body, env, kont) ->
   k = new BlockCont(kont, label)
-  evaluateBegin body, (new BlockEnv env, label, kont), k
+  evaluateBegin body, (new BlockEnv env, label, k), k
 
 class BlockCont extends Continuation
   constructor: (@kont, @label) ->
