@@ -389,7 +389,7 @@ definitial "apply", new Primitive "apply", (values, env, kont) ->
 
 definitial "funcall", new Primitive "funcall", (args, env, kont) ->
     if not nilp cdr args
-      @kont.invoke (car args), (cdr args)
+      kont.invoke (env.lookup (car args)), (cdr args)
     else
       throw new LispInterpreterError "Invoke requires a function name and arguments"
 
