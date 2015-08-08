@@ -13,19 +13,19 @@ lisp = (ast) ->
   olisp ast, (i) -> ret = i
   return ret
   
-describe "Core interpreter #3: Unwind-Protect", ->
+describe "Core interpreter #3: Protect", ->
   it "unwinds but returns the value of the form", ->
-    expect(lisp read "(unwind-protect 1 2").to.equal(1)
+    expect(lisp read "(protect 1 2").to.equal(1)
    it "unwinds within an iffe to correctly evaluate the side-effect", ->
-     expect(lisp read "((lambda (c) (unwind-protect 1 (set! c 2)) c ) 0 ").to.equal(2)
+     expect(lisp read "((lambda (c) (protect 1 (set! c 2)) c ) 0 ").to.equal(2)
    it "Unwinds inside an unevaluated definition", ->
-     expect(lisp read "((lambda (c) (catch 111 (* 2 (unwind-protect (* 3 (throw 111 5)) (set! c 1) ))) ) 0)").to.equal(5)
+     expect(lisp read "((lambda (c) (catch 111 (* 2 (protect (* 3 (throw 111 5)) (set! c 1) ))) ) 0)").to.equal(5)
    it "Unwinds inside the evaluated definition, triggering the side effect", ->
-     expect(lisp read "((lambda (c) (catch 111 (* 2 (unwind-protect (* 3 (throw 111 5)) (set! c 1) ))) c ) 0)").to.equal(1)
+     expect(lisp read "((lambda (c) (catch 111 (* 2 (protect (* 3 (throw 111 5)) (set! c 1) ))) c ) 0)").to.equal(1)
    it "Same story, using block/return", ->
-     expect(lisp read "((lambda (c) (block A (* 2 (unwind-protect (* 3 (return-from A 5)) (set! c 1) ))) ) 0)").to.equal(5)
+     expect(lisp read "((lambda (c) (block A (* 2 (protect (* 3 (return A 5)) (set! c 1) ))) ) 0)").to.equal(5)
    it "Same story, using block/return with a triggered side-effect", ->
-     expect(lisp read "((lambda (c) (block A (* 2 (unwind-protect (* 3 (return-from A 5)) (set! c 1) ))) c ) 0)").to.equal(1)
+     expect(lisp read "((lambda (c) (block A (* 2 (protect (* 3 (return A 5)) (set! c 1) ))) c ) 0)").to.equal(1)
  
  
 #describe "Core interpreter #3: Try/Catch with Throw as a function", ->
