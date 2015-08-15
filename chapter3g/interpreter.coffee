@@ -321,9 +321,10 @@ class CatchCont extends Continuation
 
 # Resume here does just that; it just resumes with the continuation
 # passed in above.  But should catch be *triggered* by a throw (and
-# the throw-continuation), we get the contents of throw as a thing to
-# be evaluated with its current environment, then continue with *this*
-# as the continuation passed to throwing-continuation.
+# the throw-continuation), we get the contents of throw as an object
+# to be evaluated with its current environment, then continue with
+# *this* as the continuation passed to throwing-continuation, which
+# resumes the catchLookup until the stack is exhausted.
 
 class LabeledCont extends Continuation
   constructor: (@kont, @tag) ->
@@ -350,20 +351,12 @@ class UnwindCont extends Continuation
   resume: (value) ->
     @kont.unwind @value, @target
 
-# Works its way through the stack environment stack, looking for
-# ("breaching") protected blocks to unwind, and processing them as
-# necessary.  One of those will by definition be the continuation
-# passed to the catch continuation, as the throwing-continuation is
-# constructed with it as the address of the resumecont.
-
-class ThrowingCont extends Continuation
-  constructor: (@kont, @tag, @resumecont) ->
-    @_type = "ThrowingCont"
-  resume: (value) ->
-    @kont.unwind value, @resumecont
-
 evaluateUnwindProtect = (form, cleanup, env, kont) ->
   evaluate form, env, (new UnwindProtectCont kont, cleanup, env)
+
+# If the continuation is "resumed," it works like normal; but if its
+# "unwound," it works its way up the unwind stack looking for the
+# target continuation to which to deliver the value.
 
 class UnwindProtectCont extends Continuation
   constructor: (@kont, @cleanup, @env) ->
@@ -372,6 +365,23 @@ class UnwindProtectCont extends Continuation
     evaluateBegin @cleanup, @env, (new ProtectReturnCont @kont, value)
   unwind: (value, target) ->
     evaluateBegin @cleanup, @env, (new UnwindCont @kont, value, target)
+
+# Works its way through the stack environment stack, looking for
+# ("breaching") protected blocks to unwind, and processing them as
+# necessary.  One of those will by definition be the continuation
+# passed to the catch continuation: the throwing-continuation was
+# constructed with the catch continuation itself as the address of the
+# resumecont.
+
+class ThrowingCont extends Continuation
+  constructor: (@kont, @tag, @resumecont) ->
+    @_type = "ThrowingCont"
+  resume: (value) ->
+    @kont.unwind value, @resumecont
+
+# Note that this behavior basically much like throwing-continuation,
+# except that it's the resumption (the next continuation), rather than
+# the rewind.
 
 class ProtectReturnCont extends Continuation
   constructor: (@kont, @value) ->
