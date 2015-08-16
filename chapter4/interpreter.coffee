@@ -1,8 +1,12 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
+{length} = require "cons-lists/reduce"
 {normalizeForms, normalizeForm} = require "../chapter1/astToList"
 {Node, Comment, Symbol} = require '../chapter1/reader_types'
+{inspect} = require 'util'
+
+itap = (a) -> return inspect a, true, null, false
 
 class LispInterpreterError extends Error
   name: 'LispInterpreterError'
@@ -28,22 +32,27 @@ astSymbolsToLispSymbols = (node) ->
 cadddr = metacadr('cadddr')
 
 intlistp =     (node) -> node.type == 'list'
-intsymbolp =   (node) -> node.type == 'symbol'
+intpairp =     (node) -> node.type == 'list' and ((node.value.length < 2) or node.value[1].node.type != 'list')
+intsymbolp =   (node) -> node.type == 'symbol' or node instanceof Symbol
 intnumberp =   (node) -> node.type == 'number'
 intstringp =   (node) -> node.type == 'string'
 intcommentp =  (node) -> node.type == 'comment'
-intnvalu =     (node) -> if (node.type == 'symbol') then node.value.name else node.value
+intnvalu =     (node) -> node.value
 intatomp =     (node) -> node.type in ['symbol', 'number', 'string']
+intnullp =     (node) -> node.type == 'symbol' and node.value.name == 'null'
 intmksymbols = (list) -> astSymbolsToLispSymbols(list)
 
 # The hairness of this makes me doubt the wisdom of using Javascript.
 
 sBehavior = new Symbol 'behavior'
-sBehavior = new Symbol 'behavior'
 sBoolean  = new Symbol 'boolean'
 sBoolify  = new Symbol 'boolify'
 sFunction = new Symbol 'function'
+sSymbol   = new Symbol 'symbol'
+sString   = new Symbol 'string'
+sChars    = new Symbol 'chars'
 sName     = new Symbol 'name'
+sNumber   = new Symbol 'number'
 sNull     = new Symbol 'null'
 sTag      = new Symbol 'tag'
 sType     = new Symbol 'type'
@@ -70,35 +79,49 @@ prox =
 
 transcode = (value, mem, qont) ->
   forms = [
-    [intnullp, -> q theEmptyList, mem],
-    [((v) -> intsymbolp(v) and v in ['#t', '#f']), (-> q (createBoolean value), mem)]
-    [intsymbolp, (-> q (createSymbol value), mem)]
-    [intnumberp, (-> q (createNumber value), mem)]
-    [intpairp,   (-> transcode (car intnvalu value), mem, (addr, mem2) ->
+    [intnullp, -> qont theEmptyList, mem],
+    [((v) -> intsymbolp(v) and v in ['#t', '#f']), (-> qont (createBoolean value), mem)]
+    [intsymbolp, (-> qont (createSymbol value), mem)]
+    [intnumberp, (-> qont (createNumber value), mem)]
+    [intlistp,   (-> transcode (car intnvalu value), mem, (addr, mem2) ->
       (transcode (cdr intvalu value), mem2, (d, mem3) ->
         (allocatePair addr, d, mem3, qont)))]
   ]
-  form = form[1] for form in forms when form[0](value)
-  if len(form) != 1
-    throw new LispInterpreterError "Bad form match for #{value}"
-  form[0]()
+  found = (form[1] for form in forms when form[0](value))
+  if found.length != 1
+    throw new LispInterpreterError "Bad transcode match for #{value}"
+  found[0]()
 
+transcodeBack = (value, mem) ->
+  forms = [
+    [sBoolean,  ((v) -> ((v sBoolify) true, false))]
+    [sSymbol,   ((v) -> (v sName))]
+    [sString,   ((v) -> (v sChars))]
+    [sNumber,   ((v) -> (v sValue))]
+    [sPair,     ((v) ->
+      cons (transcodeBack (mem (v sCar)), mem), (transcodeBack (mem (v sCdr)), mem))]
+    [sFunction, (v) -> v]
+  ]
+  found = (form[1] for form in forms when (eq (value sType), form[0]))
+  if found.length != 1
+    throw new LispInterpreterError "Bad transcode-back match for #{value}"
+  found[0](value)
 
 evaluate = (exp, env, mem, kont) ->
   if intatomp exp
     if intsymbolp exp
-      evaluateVariable exp, env, mem, kont
+      evaluateVariable (intnvalu exp), env, mem, kont
     else
       evaluateQuote exp, env, mem, kont
   else
     body = intnvalu exp
     head = car body
     if prox[(intnvalu head)]?
-      prox[(intnvalu head)](body, env, mem, kont, ix)
+      prox[(intnvalu head)](body, env, mem, kont)
     else
-      evaluateApplication body, (cadr body), env, mem, kont
+      evaluateApplication head, (cdr body), env, mem, kont
 
-env_init = (id) -> throw LispInterpreterError "No binding for #{id}"
+env_init = (id) -> throw new LispInterpreterError "No binding for " + id.toString()
 
 # This is basically the core definition of 'mem': it returns a
 # function enclosing the address (a monotomically increasing number as
@@ -137,7 +160,7 @@ evaluateSet = (name, exp, env, mem, kont) ->
     kont value, (update mem2, (env name), value)
 
 evaluateApplication = (exp, exprs, env, mem, kont) ->
-
+  
   # In chapter 3, this was a series of jumping continuations chasing
   # each other.  Here, all of the continuations are kept in one place,
   # and the argument list is built by tail-calls to evaluateArguments
@@ -177,7 +200,7 @@ evaluateIf = (expc, expt, expf, env, mem, kont) ->
     evaluate ((env sBoolify) expt, expf), env, mems, kont
 
 evaluateQuote = (c, env, mem, kont) ->
-  transcode (normalizeForms c), mem, kont
+  transcode (normalizeForm c), mem, kont
 
 # By starting over "from here," we undo all side-effect assignments
 # that were effected by expression 1
@@ -210,7 +233,7 @@ createBoolean = (value) ->
 createSymbol = (value) ->
   (msg) ->
     switch msg
-      when sType then sValue
+      when sType then sSymbol
       when sName then value
       when sBoolify then (x, y) -> x
 
@@ -224,7 +247,7 @@ createNumber = (value) ->
 createFunction = (tag, behavior) ->
   (msg) ->
     switch msg
-      when sType then sNumber
+      when sType then sFunction
       when sBoolify then (x, y) -> x
       when sTag then tag
       when sBehavior then behavior
@@ -281,15 +304,17 @@ mem_global = mem_init
 # corresponding boxed value.
 
 defInitial = (name, value) ->
+  if typeof name == 'string'
+    name = new Symbol name
   allocate 1, mem_global, (addrs, mem2) ->
-    env_global = update env_global, (new Symbol name), (car addrs)
+    env_global = update env_global, name, (car addrs)
     mem_global = update mem2, (car addrs), value
 
 defPrimitive = (name, arity, value) ->
   defInitial name, allocate 1, mem_global, (addrs, mem2) ->
     mem_global = expandStore (car addrs), mem2
     createFunction (car addrs), (values, mem, kont) ->
-      if (eq arity (length values))
+      if (eq arity, (length values))
         value values, mem, kont
       else
         throw new LispInterpreterError "Wrong arity for #{name}"
@@ -388,7 +413,7 @@ defPrimitive "setcar", 2, (values, mem, kont) ->
   else
     throw new LispInterpreterError "Not a pair"
 
-defPrimitive "eqv?", (values, mem, kont) ->
+defPrimitive "eqv?", 2, (values, mem, kont) ->
   kont createBoolean (
     if (eq ((car values) sType) ((cadr values) sType))
       switch ((car values) sType)
@@ -406,5 +431,22 @@ defPrimitive "eqv?", (values, mem, kont) ->
         else false
     else false)
 
+defPrimitive "eq?", 2, (values, mem, kont) ->
+  kont createBoolean (
+    if (eq ((car values) sType), ((cadr values) sType))
+      switch ((car values) sType)
+        when sBoolean
+          ((car values) sBoolify) (((cadr values) sBoolify) true, false), (((cadr values) sBoolify) false, true)
+        when sSymbol
+          eq ((car values) sName), ((cadr values) sName)
+        when sPair
+          (((car values) sCar) == ((cadr values) sCar) and
+           ((car values) sCdr) == ((cadr values) sCdr))
+        when sFunction
+          ((car value) sTag) == ((cadr value) sTag)
+        else false
+    else false)
+
 module.exports = (ast, kont) ->
-  evaluate ast, env_global, mem_global, kont
+  evaluate ast, env_global, mem_global, (value, mem) ->
+    kont (transcodeBack value, mem)
