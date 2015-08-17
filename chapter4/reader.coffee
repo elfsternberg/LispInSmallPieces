@@ -126,7 +126,7 @@ prefixReader = (type) ->
     [line1, column1] = inStream.position()
     obj = read inStream, true, null, true
     return obj if obj.type == 'error'
-    new Node "list", cons((new Node("symbol", type, line1, column1)), cons(obj)), line, column
+    new Node "list", cons((new Node("symbol", (new Symbol type), line1, column1)), cons(obj)), line, column
 
 # I really wanted to make anything more complex than a list (like an
 # object or a vector) something handled by a read macro.  Maybe in a

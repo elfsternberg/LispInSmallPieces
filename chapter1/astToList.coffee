@@ -26,7 +26,7 @@ normalizeForm = (form) ->
     'record': (atom) -> listToRecord1(atom)
 
     # Basic native types.  Meh.
-    'symbol': (id) -> new Symbol(id)
+    'symbol': (id) -> new Symbol(id.name)
     'number': id
     'string': id
     'nil': (atom) -> nil

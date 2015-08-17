@@ -50,7 +50,7 @@ sBoolify  = new Symbol 'boolify'
 sFunction = new Symbol 'function'
 sSymbol   = new Symbol 'symbol'
 sString   = new Symbol 'string'
-sChars    = new Symbol 'chars'
+sValue    = new Symbol 'chars'
 sName     = new Symbol 'name'
 sNumber   = new Symbol 'number'
 sNull     = new Symbol 'null'
@@ -69,7 +69,7 @@ prox =
   "begin":   (body, env, mem, kont) -> evaluateBegin (cdr body), env, mem, kont
   "set!":    (body, env, mem, kont) -> evaluateSet (intnvalu cadr body), (caddr body), env, mem, kont
   "lambda":  (body, env, mem, kont) -> evaluateLambda (intmksymbols cadr body), (cddr body), env, mem, kont
-  "or":      (body, env, mem, kont) -> evaluateOr (car body), (cdr body), env, mem, kont
+  "or":      (body, env, mem, kont) -> evaluateOr (cadr body), (caddr body), env, mem, kont
 
 #  ___          _           _
 # | __|_ ____ _| |_  _ __ _| |_ ___ _ _
@@ -83,6 +83,7 @@ transcode = (value, mem, qont) ->
     [((v) -> intsymbolp(v) and v in ['#t', '#f']), (-> qont (createBoolean value), mem)]
     [intsymbolp, (-> qont (createSymbol value), mem)]
     [intnumberp, (-> qont (createNumber value), mem)]
+    [intstringp, (-> qont (createString value), mem)]
     [intlistp,   (-> transcode (car intnvalu value), mem, (addr, mem2) ->
       (transcode (cdr intvalu value), mem2, (d, mem3) ->
         (allocatePair addr, d, mem3, qont)))]
@@ -92,11 +93,28 @@ transcode = (value, mem, qont) ->
     throw new LispInterpreterError "Bad transcode match for #{value}"
   found[0]()
 
+transcode2 = (value, mem, qont) ->
+  forms = [
+    [((v) -> v instanceof Symbol and v.name == 'null'), (-> qont theEmptyList, mem)],
+    [((v) -> v instanceof Symbol and v.name in ['#t', '#f']), (-> qont (createBoolean value), mem)]
+    [((v) -> v instanceof Symbol), (-> qont (createSymbol value), mem)]
+    [((v) -> typeof v == 'string'), (-> qont (createString value), mem)]
+    [((v) -> typeof v == 'number'), (-> qont (createNumber value), mem)]
+    [((v) -> v.__type == 'list'), (-> transcode (car value), mem, (addr, mem2) ->
+      (transcode (cdr value), mem2, (d, mem3) ->
+        (allocatePair addr, d, mem3, qont)))]
+  ]
+  found = (form[1] for form in forms when form[0](value))
+  if found.length < 1
+    throw new LispInterpreterError "Bad transcode match for #{value}"
+  found[0]()
+
+
 transcodeBack = (value, mem) ->
   forms = [
     [sBoolean,  ((v) -> ((v sBoolify) true, false))]
     [sSymbol,   ((v) -> (v sName))]
-    [sString,   ((v) -> (v sChars))]
+    [sString,   ((v) -> (v sValue))]
     [sNumber,   ((v) -> (v sValue))]
     [sPair,     ((v) ->
       cons (transcodeBack (mem (v sCar)), mem), (transcodeBack (mem (v sCdr)), mem))]
@@ -116,12 +134,14 @@ evaluate = (exp, env, mem, kont) ->
   else
     body = intnvalu exp
     head = car body
-    if prox[(intnvalu head)]?
-      prox[(intnvalu head)](body, env, mem, kont)
+    pname = (intnvalu head)
+    if pname instanceof Symbol and prox[pname.name]?
+      prox[pname.name](body, env, mem, kont)
     else
       evaluateApplication head, (cdr body), env, mem, kont
 
-env_init = (id) -> throw new LispInterpreterError "No binding for " + id.toString()
+env_init = (id) ->
+  throw new LispInterpreterError "No binding for " + id
 
 # This is basically the core definition of 'mem': it returns a
 # function enclosing the address (a monotomically increasing number as
@@ -200,14 +220,14 @@ evaluateIf = (expc, expt, expf, env, mem, kont) ->
     evaluate ((env sBoolify) expt, expf), env, mems, kont
 
 evaluateQuote = (c, env, mem, kont) ->
-  transcode (normalizeForm c), mem, kont
+  transcode2 (normalizeForm c), mem, kont
 
 # By starting over "from here," we undo all side-effect assignments
 # that were effected by expression 1
 
 evaluateOr = (exp1, exp2, env, mem, kont) ->
   evaluate exp1, env, mem, (value, mem2) ->
-    (value sBoolify) (-> kont value, mem2), (-> evaluate exp2, env, mem, kont)
+    ((value sBoolify) (-> kont value, mem2), (-> evaluate exp2, env, mem, kont))()
 
 # I like how, in this version, we explicitly throw away the meaning of
 # all but the last statement in evaluateBegin.
@@ -241,6 +261,13 @@ createNumber = (value) ->
   (msg) ->
     switch msg
       when sType then sNumber
+      when sValue then value
+      when sBoolify then (x, y) -> x
+
+createString = (value) ->
+  (msg) ->
+    switch msg
+      when sType then sString
       when sValue then value
       when sBoolify then (x, y) -> x
 
@@ -326,8 +353,8 @@ defPrimitive = (name, arity, value) ->
 #
 
 
-defInitial "true", createBoolean true
-defInitial "false", createBoolean false
+defInitial "#t", createBoolean true
+defInitial "#f", createBoolean false
 defInitial "nil", null
 
 defPrimitive "<=", 2, (values, mem, kont) ->
@@ -355,7 +382,7 @@ defPrimitive ">", 2, (values, mem, kont) ->
     throw new LispInterpreterError "Comparison requires numbers"
 
 defPrimitive "=", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
+  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sType), sNumber)
     kont (createBoolean (((car values) sValue) == ((cadr values) sValue))), mem
   else
     throw new LispInterpreterError "Comparison requires numbers"
@@ -367,7 +394,7 @@ defPrimitive "*", 2, (values, mem, kont) ->
     throw new LispInterpreterError "Multiplication requires numbers"
 
 defPrimitive "+", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
+  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sType), sNumber)
     kont (createNumber (((car values) sValue) + ((cadr values) sValue))), mem
   else
     throw new LispInterpreterError "Addition requires numbers"
@@ -413,24 +440,6 @@ defPrimitive "setcar", 2, (values, mem, kont) ->
   else
     throw new LispInterpreterError "Not a pair"
 
-defPrimitive "eqv?", 2, (values, mem, kont) ->
-  kont createBoolean (
-    if (eq ((car values) sType) ((cadr values) sType))
-      switch ((car values) sType)
-        when sBoolean
-          ((car values) sBoolify) (((cadr values) sBoolify) true, false), (((cadr values) sBoolify) false, true)
-        when sSymbol
-          eq ((car values) sName), ((cadr values) sName)
-        when sNumber
-          ((car values) sName) == ((cadr values) sName)
-        when sPair
-          (((car values) sCar) == ((cadr values) sCar) and
-           ((car values) sCdr) == ((cadr values) sCdr))
-        when sFunction
-          ((car value) sTag) == ((cadr value) sTag)
-        else false
-    else false)
-
 defPrimitive "eq?", 2, (values, mem, kont) ->
   kont createBoolean (
     if (eq ((car values) sType), ((cadr values) sType))
@@ -443,7 +452,25 @@ defPrimitive "eq?", 2, (values, mem, kont) ->
           (((car values) sCar) == ((cadr values) sCar) and
            ((car values) sCdr) == ((cadr values) sCdr))
         when sFunction
-          ((car value) sTag) == ((cadr value) sTag)
+          ((car values) sTag) == ((cadr values) sTag)
+        else false
+    else false)
+
+defPrimitive "eqv?", 2, (values, mem, kont) ->
+  kont createBoolean (
+    if (eq ((car values) sType), ((cadr values) sType))
+      switch ((car values) sType)
+        when sBoolean
+          ((car values) sBoolify) (((cadr values) sBoolify) true, false), (((cadr values) sBoolify) false, true)
+        when sSymbol
+          eq ((car values) sName), ((cadr values) sName)
+        when sNumber
+          ((car values) sValue) == ((cadr values) sValue)
+        when sPair
+          (((car values) sCar) == ((cadr values) sCar) and
+           ((car values) sCdr) == ((cadr values) sCdr))
+        when sFunction
+          ((car values) sTag) == ((cadr values) sTag)
         else false
     else false)
 
