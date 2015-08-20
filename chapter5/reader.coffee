@@ -1,12 +1,16 @@
 {car, cdr, cons, nil, nilp, pairp, vectorToList, list} = require 'cons-lists/lists'
 {inspect} = require "util"
-{Node, Comment, Symbol} = require "../chapter5/reader_types"
+{Comment, Symbol} = require "../chapter5/reader_types"
 
 NEWLINES   = ["\n", "\r", "\x0B", "\x0C"]
 WHITESPACE = [" ", "\t"].concat(NEWLINES)
 
 EOF = new (class Eof)()
 EOO = new (class Eoo)()
+
+class ReadError extends Error
+  name: 'LispInterpreterError'
+  constructor: (@message) ->
 
 class Source
   constructor: (@inStream) ->
@@ -32,33 +36,6 @@ class Source
 skipWS = (inStream) ->
   while inStream.peek() in WHITESPACE then inStream.next()
 
-# msg -> (IO -> IO, Node)
-handleError = (message) ->
-  (line, column) -> new Node('error', message, line, column)
-
-# IO -> (IO, Node)
-readComment = (inStream) ->
-  [line, column] = inStream.position()
-  r = (while inStream.peek() != "\n" and not inStream.done()
-    inStream.next()).join("")
-  if not inStream.done()
-    inStream.next()
-  new Node 'comment', (new Comment r), line, column
-
-# IO -> (IO, Node) | Error
-readString = (inStream) ->
-  [line, column] = inStream.position()
-  inStream.next()
-  string = until inStream.peek() == '"' or inStream.done()
-    if inStream.peek() == '\\'
-      inStream.next()
-    inStream.next()
-  if inStream.done()
-    return handleError("end of file seen before end of string.")(line, column)
-  inStream.next()
-  new Node 'string', (string.join ''), line, column
-
-# (String) -> (Symbol | Number) | Nothing
 readMaybeNumber = (symbol) ->
   if symbol[0] == '+'
     return readMaybeNumber symbol.substr(1)
@@ -75,129 +52,116 @@ readMaybeNumber = (symbol) ->
     return nil
   undefined
 
-# (IO, macros) -> (IO, Node => Number | Symbol) | Error
-readSymbol = (inStream, tableKeys) ->
-  [line, column] = inStream.position()
-  symbol = (until (inStream.done() or inStream.peek() in tableKeys or inStream.peek() in WHITESPACE)
-    inStream.next()).join ''
-  number = readMaybeNumber symbol
-  if number?
-    return new Node 'number', number, line, column
-  new Node (new Symbol symbol), line, column
-
-
-# (Delim, TypeName) -> IO -> (IO, Node) | Error
+# (Delim, TypeName) -> IO -> (IO, Node) | Errorfor
 makeReadPair = (delim, type) ->
   # IO -> (IO, Node) | Error
   (inStream) ->
     inStream.next()
     skipWS inStream
-    [line, column] = inStream.position()
     if inStream.peek() == delim
-      inStream.next()
-      return new Node type, nil, line, column
+      inStream.next() unless inStream.done()
+      return if type then cons((new Symbol type), nil) else nil
 
     # IO -> (IO, Node) | Error
     dotted = false
-    readEachPair = (inStream) ->
-      [line, column] = inStream.position()
-      obj = read inStream, true, null, true
+    readEachPair = (inStream) =>
+      obj = @read inStream, true, null, true
       if inStream.peek() == delim
         if dotted then return obj
         return cons obj, nil
-      if inStream.done() then return handleError("Unexpected end of input")(line, column)
-      if dotted then return handleError("More than one symbol after dot")
-      return obj if obj.type == 'error'
-      if obj.type == 'symbol' and obj.value == '.'
+      return obj if obj instanceof ReadError
+      if inStream.done() then return new ReadError "Unexpected end of input"
+      if dotted then return new ReadError "More than one symbol after dot in list"
+      if obj instanceof Symbol and obj.name == '.'
         dotted = true
         return readEachPair inStream
       cons obj, readEachPair inStream
 
-    ret = new Node type, readEachPair(inStream), line, column
-    inStream.next()
-    ret
+    obj = readEachPair(inStream)
+    inStream.next() 
+    if type then cons((new Symbol type), obj) else obj
 
 # Type -> IO -> IO, Node
 prefixReader = (type) ->
   # IO -> IO, Node
   (inStream) ->
-    [line, column] = inStream.position()
     inStream.next()
-    [line1, column1] = inStream.position()
     obj = read inStream, true, null, true
-    return obj if obj.type == 'error'
-    new Node "list", cons((new Node("symbol", (new Symbol type), line1, column1)), cons(obj)), line, column
+    return obj if obj instanceof ReadError
+    cons((new Symbol type), obj)
 
-# I really wanted to make anything more complex than a list (like an
-# object or a vector) something handled by a read macro.  Maybe in a
-# future revision I can vertically de-integrate these.
+class Reader
+  "symbol": (inStream) ->
+    symbol = (until (inStream.done() or @[inStream.peek()]? or inStream.peek() in WHITESPACE)
+      inStream.next()).join ''
+    number = readMaybeNumber symbol
+    if number?
+      return number
+    new Symbol symbol
 
-readMacros =
-  '"': readString
-  '(': makeReadPair ')', 'list'
-  ')': handleError "Closing paren encountered"
+  "read": (inStream, eofErrorP = false, eofError = EOF, recursiveP = false, keepComments = false) ->
+    inStream = if inStream instanceof Source then inStream else new Source inStream
+  
+    c = inStream.peek()
+  
+    # (IO, Char) -> (IO, Node) | Error
+    matcher = (inStream, c) =>
+      if inStream.done()
+        return if recursiveP then (new ReadError 'EOF while processing nested object') else nil
+      if c in WHITESPACE
+        inStream.next()
+        return nil
+      if c == ';'
+        return readComment(inStream)
+      ret = if @[c]? then @[c](inStream) else @symbol(inStream)
+      skipWS inStream
+      ret
+  
+    while true
+      form = matcher inStream, c
+      skip = (not nilp form) and (form instanceof Comment) and not keepComments
+      break if (not skip and not nilp form) or inStream.done()
+      c = inStream.peek()
+      null
+    form
+
+  '(': makeReadPair ')', null
+
   '[': makeReadPair ']', 'vector'
-  ']': handleError "Closing bracket encountered"
+
   '{': makeReadPair('}', 'record', (res) ->
     res.length % 2 == 0 and true or mkerr "record key without value")
-  '}': handleError "Closing curly without corresponding opening."
-  "`": prefixReader 'back-quote'
-  "'": prefixReader 'quote'
-  ",": prefixReader 'unquote'
-  ";": readComment
 
-# Given a stream, reads from the stream until a single complete lisp
-# object has been found and returns the object
-
-# IO -> IO, Node
-read = (inStream, eofErrorP = false, eofError = EOF, recursiveP = false, inReadMacros = null, keepComments = false) ->
-  inStream = if inStream instanceof Source then inStream else new Source inStream
-  inReadMacros = if InReadMacros? then inReadMacros else readMacros
-  inReadMacroKeys = (i for i of inReadMacros)
-
-  c = inStream.peek()
-
-  # (IO, Char) -> (IO, Node) | Error
-  matcher = (inStream, c) ->
-    if inStream.done()
-      return if recursiveP then handleError('EOF while processing nested object')(inStream) else nil
-    if c in WHITESPACE
+  '"': (inStream) ->
+    inStream.next()
+    s = until inStream.peek() == '"' or inStream.done()
+      if inStream.peek() == '\\'
+        inStream.next()
       inStream.next()
-      return nil
-    if c == ';'
-      return readComment(inStream)
-    ret = if c in inReadMacroKeys then inReadMacros[c](inStream) else readSymbol(inStream, inReadMacroKeys)
-    skipWS inStream
-    ret
+    return (new ReadError "end of file seen before end of string") if inStream.done()
+    inStream.next()
+    s.join ''
 
-  while true
-    form = matcher inStream, c
-    skip = (not nilp form) and (form.type == 'comment') and not keepComments
-    break if (not skip and not nilp form) or inStream.done()
-    c = inStream.peek()
-    null
-  form
+  ')': (inStream) -> new ReadError "Closing paren encountered"
 
-# readForms assumes that the string provided contains zero or more
-# forms.  As such, it always returns a list of zero or more forms.
+  ']': (inStream) -> new ReadError "Closing bracket encountered"
 
-# IO -> (IO, Nodes* | Error)
-readForms = (inStream) ->
-  inStream = if inStream instanceof Source then inStream else new Source inStream
-  return nil if inStream.done()
+  '}': (inStream) -> new ReadError "Closing curly without corresponding opening."
 
-  # IO -> (IO, Nodes* | Error
-  [line, column] = inStream.position()
-  readEach = (inStream) ->
-    obj = read inStream, true, null, false
-    return nil if (nilp obj)
-    return obj if obj.type == 'error'
-    cons obj, readEach inStream
+  "`": prefixReader 'back-quote'
 
-  obj = readEach inStream
-  if obj.type == 'error' then obj else new Node "list", obj, line, column
+  "'": prefixReader 'quote'
 
-exports.read = read
-exports.readForms = readForms
-exports.Node = Node
-exports.Symbol = Symbol
+  ",": prefixReader 'unquote'
+
+  ";": (inStream) ->
+    r = (while inStream.peek() != "\n" and not inStream.done()
+      inStream.next()).join("")
+    inStream.next() if not inStream.done()
+    new Comment r
+
+exports.Source = Source
+exports.ReadError = ReadError  
+exports.Reader = Reader
+reader = new Reader()
+exports.read = -> reader.read.apply(reader, arguments)
