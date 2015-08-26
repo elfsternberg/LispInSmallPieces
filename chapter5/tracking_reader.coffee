@@ -13,10 +13,13 @@ liftToTrack = (f) ->
     if obj instanceof Node then obj else new Node obj, line, column
 
 TrackingReader = class
+
 for own key, func of Reader::
   TrackingReader::[key] = liftToTrack(func)
+TrackingReader::acc = (obj) -> obj.v
 
-exports.ReadError = ReadError  
+exports.ReadError = ReadError
 exports.Reader = TrackingReader
 exports.reader = reader = new TrackingReader()
 exports.read = -> reader.read.apply(reader, arguments)
+

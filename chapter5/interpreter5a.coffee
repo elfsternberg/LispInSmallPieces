@@ -1,6 +1,7 @@
 {listToString, listToVector, pairp, cons, car, cdr, caar, cddr, cdar,
  cadr, caadr, cadar, caddr, nilp, nil, setcdr,
  metacadr, setcar} = require "cons-lists/lists"
+{map} = require "cons-lists/reduce"
 {length} = require "cons-lists/reduce"
 {normalizeForms, normalizeForm} = require "../chapter1/astToList"
 {Node, Comment, Symbol} = require '../chapter1/reader_types'
@@ -31,18 +32,34 @@ astSymbolsToLispSymbols = (node) ->
 
 cadddr = metacadr('cadddr')
 
-intlistp =     (node) -> node.type == 'list'
-intpairp =     (node) -> node.type == 'list' and ((node.value.length < 2) or node.value[1].node.type != 'list')
-intsymbolp =   (node) -> node.type == 'symbol' or node instanceof Symbol
-intnumberp =   (node) -> node.type == 'number'
-intstringp =   (node) -> node.type == 'string'
-intcommentp =  (node) -> node.type == 'comment'
-intnvalu =     (node) -> node.value
-intatomp =     (node) -> node.type in ['symbol', 'number', 'string']
-intnullp =     (node) -> node.type == 'symbol' and node.value.name == 'null'
-intmksymbols = (list) -> astSymbolsToLispSymbols(list)
+consp = (e) ->
+  ((pairp e) and (typeof (car e) == 'number') and
+  ((car e) > 0) and (pairp cdr e) and (typeof (cadr e) == 'number') and
+  ((cadr e) > 0) and (nilp cddr e))
 
-# The hairness of this makes me doubt the wisdom of using Javascript.
+convert = (exp, store) ->
+  conv = (e) ->
+    if consp e
+      cons (conv content.v, (store (car e))), (conv content.v, (store (cadr e)))
+    else
+      e
+  conv (content.v e)
+
+translate = (exp, store, qont) ->
+  if (pairp exp)
+    translate (car exp), store, (val1, store1) ->
+      translate (cdr exp), store1, (val2, store2) ->
+        
+allocate = (->
+  loc = 0
+  (store, num, qont) ->
+    addrs = cons()
+    n = num
+    until n <= 0
+      loc = loc + 1
+      n = n - 1
+      cons loc, addrs
+    qont store, addrs)()
 
 sBehavior = new Symbol 'behavior'
 sBoolean  = new Symbol 'boolean'
@@ -63,417 +80,257 @@ sCdr      = new Symbol 'cdr'
 sSetCar   = new Symbol 'setcar'
 sSetCdr   = new Symbol 'setcdr'
 
-prox =
-  "quote":   (body, env, mem, kont) -> evaluateQuote (cadr body), env, mem, kont
-  "if":      (body, env, mem, kont) -> evaluateIf (cadr body), (caddr body), (cadddr body), env, mem, kont
-  "begin":   (body, env, mem, kont) -> evaluateBegin (cdr body), env, mem, kont
-  "set!":    (body, env, mem, kont) -> evaluateSet (intnvalu cadr body), (caddr body), env, mem, kont
-  "lambda":  (body, env, mem, kont) -> evaluateLambda (intmksymbols cadr body), (cddr body), env, mem, kont
-  "or":      (body, env, mem, kont) -> evaluateOr (cadr body), (caddr body), env, mem, kont
+class Value
+  constructor: (@content) ->
 
-#  ___          _           _
-# | __|_ ____ _| |_  _ __ _| |_ ___ _ _
-# | _|\ V / _` | | || / _` |  _/ _ \ '_|
-# |___|\_/\__,_|_|\_,_\__,_|\__\___/_|
-#
+inValue = (f) ->
+  new Value(f)
 
-transcode = (value, mem, qont) ->
-  forms = [
-    [intnullp, -> qont theEmptyList, mem],
-    [((v) -> intsymbolp(v) and v in ['#t', '#f']), (-> qont (createBoolean value), mem)]
-    [intsymbolp, (-> qont (createSymbol value), mem)]
-    [intnumberp, (-> qont (createNumber value), mem)]
-    [intstringp, (-> qont (createString value), mem)]
-    [intlistp,   (-> transcode (car intnvalu value), mem, (addr, mem2) ->
-      (transcode (cdr intvalu value), mem2, (d, mem3) ->
-        (allocatePair addr, d, mem3, qont)))]
-  ]
-  found = (form[1] for form in forms when form[0](value))
-  if found.length != 1
-    throw new LispInterpreterError "Bad transcode match for #{value}"
-  found[0]()
+ValueToFunction = (e) ->
+  c = e.content
+  if (typeof c == 'function') then c else throw new LispInterpreterError("Not a function: " + Object.toString(c))
 
-transcode2 = (value, mem, qont) ->
-  forms = [
-    [((v) -> v instanceof Symbol and v.name == 'null'), (-> qont theEmptyList, mem)],
-    [((v) -> v instanceof Symbol and v.name in ['#t', '#f']), (-> qont (createBoolean value), mem)]
-    [((v) -> v instanceof Symbol), (-> qont (createSymbol value), mem)]
-    [((v) -> typeof v == 'string'), (-> qont (createString value), mem)]
-    [((v) -> typeof v == 'number'), (-> qont (createNumber value), mem)]
-    [((v) -> v.__type == 'list'), (-> transcode (car value), mem, (addr, mem2) ->
-      (transcode (cdr value), mem2, (d, mem3) ->
-        (allocatePair addr, d, mem3, qont)))]
-  ]
-  found = (form[1] for form in forms when form[0](value))
-  if found.length < 1
-    throw new LispInterpreterError "Bad transcode match for #{value}"
-  found[0]()
+ValueToPair = (e) ->
+  c = e.content
+  if pairp c then c else throw new LispInterpreterError("Not a pair: " + Object.toString(c))
 
+ValueToNumber = (e) ->
+  c = e.content
+  if (typeof c == 'number') then c else throw new LispInterpreterError("Not a number: " + Object.toString(c))
 
-transcodeBack = (value, mem) ->
-  forms = [
-    [sBoolean,  ((v) -> ((v sBoolify) true, false))]
-    [sSymbol,   ((v) -> (v sName))]
-    [sString,   ((v) -> (v sValue))]
-    [sNumber,   ((v) -> (v sValue))]
-    [sPair,     ((v) ->
-      cons (transcodeBack (mem (v sCar)), mem), (transcodeBack (mem (v sCdr)), mem))]
-    [sFunction, (v) -> v]
-  ]
-  found = (form[1] for form in forms when (eq (value sType), form[0]))
-  if found.length != 1
-    throw new LispInterpreterError "Bad transcode-back match for #{value}"
-  found[0](value)
-
-evaluate = (exp, env, mem, kont) ->
-  if intatomp exp
-    if intsymbolp exp
-      evaluateVariable (intnvalu exp), env, mem, kont
-    else
-      evaluateQuote exp, env, mem, kont
-  else
-    body = intnvalu exp
-    head = car body
-    pname = (intnvalu head)
-    if pname instanceof Symbol and prox[pname.name]?
-      prox[pname.name](body, env, mem, kont)
-    else
-      evaluateApplication head, (cdr body), env, mem, kont
-
-env_init = (id) ->
-  throw new LispInterpreterError "No binding for " + id
-
-# This is basically the core definition of 'mem': it returns a
-# function enclosing the address (a monotomically increasing number as
-# memory is allocated) and the value.  Update is passed the current
-# memory, the address, and the value; it returns a function that says
-# "If the requested address is my address, return my value, otherwise
-# I'll call the memory handed to me at creation time with the address,
-# and it'll go down the line."  Update basically adds to a 'stack'
-# built entirely out of pointers to the base mem.
-
-update = (mem, addr, value) ->
-  (addra) -> if (eq addra, addr) then value else (mem addra)
-
-updates = (mem, addrs, values) ->
-  if (pairp addrs)
-    updates (update mem, (car addrs), (car values)), (cdr addrs), (cdr values)
-  else
-    mem
-
-# Memory location zero contains the position of the stack.
-
-expandStore = (highLocation, mem) ->
-  update mem, 0, highLocation
-
-mem_init = expandStore 0, (a) ->
-  throw new LispInterpreterError "No such address #{a}"
-
-newLocation = (mem) ->
-  (mem 0) + 1
-
-evaluateVariable = (name, env, mem, kont) ->
-  kont (mem (env name)), mem
-
-evaluateSet = (name, exp, env, mem, kont) ->
-  evaluate exp, env, mem, (value, mem2) ->
-    kont value, (update mem2, (env name), value)
-
-evaluateApplication = (exp, exprs, env, mem, kont) ->
   
-  # In chapter 3, this was a series of jumping continuations chasing
-  # each other.  Here, all of the continuations are kept in one place,
-  # and the argument list is built by tail-calls to evaluateArguments
-  # until the list is exhausted, at which point the continuation is
-  # called.  The continuation is built in the second paragraph below.
+class Interpreter
+  constructor: ->
+    arity_check = (name, arity, fn) =>
+      (values, kont, store) =>
+        if not eq (length values), arity
+          throw new LispInterpreterError "Incorrect Arity for #{name}"
+        fn.call(@, values, kont, store)
 
-  evaluateArguments = (exprs, env, mem, kont) ->
-    if (pairp exprs)
-      evaluate (car exprs), env, mem, (value, mem2) ->
-        evaluateArguments (cdr exprs), env, mem2, (value2, mem3) ->
-          kont (cons value, value2), mem3
+    @definitial "cons", inValue arity_check "cons", 2, (values, kont, store) =>
+      allocate store, 2, (store, addrs) =>
+        kont (inValue (cons (car addr), (cadr addr))), (@extends store, addrs, values)
+  
+    @definitial "car", inValue arity_check "car", 1, (values, kont, store) =>
+      kont (store car @valueToPair (car values)), store
+  
+    @definitial "cdr", inValue arity_check "car", 1, (values, kont, store) =>
+      kont (store cadr @valueToPair (car values)), store
+  
+    @defprimitive "pair?", ((v) -> inValue (consp v.content)), 1
+    @defprimitive "eq?", ((v1, v2) -> inValue (eq v1.content, v2.content)), 2
+    @defprimitive "symbol?", ((v) -> inValue (symbolp v.content)), 1
+  
+    @definitial "set-car!", inValue arity_check, "set-car!", 2, (values, kont, store) =>
+      kont (car values), (@extend store, (car (ValueToPair (car values))), (cadr values))
+  
+    @definitial "set-cdr!", inValue arity_check, "set-cdr!", 2, (values, kont, store) =>
+      kont (car values), (@extend store, (cadr (ValueToPair (car values))), (cadr values))
+  
+    @defarithmetic "+",  ((x, y) -> x + y),  2
+    @defarithmetic "-",  ((x, y) -> x - y),  2
+    @defarithmetic "*",  ((x, y) -> x * y),  2
+    @defarithmetic "/",  ((x, y) -> x / y),  2
+    @defarithmetic "<",  ((x, y) -> x < y),  2
+    @defarithmetic ">",  ((x, y) -> x > y),  2
+    @defarithmetic "=",  ((x, y) -> x == y), 2
+    @defarithmetic "<=", ((x, y) -> x <= y), 2
+    @defarithmetic ">=", ((x, y) -> x >= y), 2
+    @defarithmetic "%",  ((x, y) -> x % y),  2
+  
+    @definitial "apply", arity_check "apply", 2, inValue (values, kont, store) ->
+      flat = (v) ->
+        if pairp v.content
+          cons (store (car (ValueToPair v))), (flat (store (cadr (ValueToPair v))))
+        else
+          cons()
+
+      collect = (values) ->
+        if nullp cdr values
+          flat car values
+        else
+          cons (car values), (collect cdr values)
+
+      (ValueToFunction (car values)) (collect (cdr values)), kont, store
+
+    @definitial '#t', (inValue true)
+    @definitial '#f', (inValue false)
+    @definitial 'nil', (inValue cons())
+
+    @definitial "x", null
+    @definitial "y", null
+    @definitial "z", null
+    @definitial "a", null
+    @definitial "b", null
+    @definitial "c", null
+    @definitial "foo", null
+    @definitial "bar", null
+    @definitial "hux", null
+    @definitial "fib", null
+    @definitial "fact", null
+    @definitial "visit", null
+    @definitial "length", null
+    @definitial "primes", null
+    @loc = 0
+
+  loc: 0     # For allocate
+    
+  listp:     (cell) -> cell.__type == 'list'
+  symbolp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] not in ["\"", ";"]
+  commentp:  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"
+  numberp:   (cell) -> typeof cell == 'number'
+  stringp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == "\""
+  boolp:     (cell) -> typeof cell == 'boolean'
+  nullp:     (cell) -> cell == null
+  vectorp:   (cell) -> (not straight_evaluation.listp cell) and toString.call(cell) == '[object Array]'
+  recordp:   (cell) -> (not cell._prototype?) and toSTring.call(cell) == '[object Object]'
+  objectp:   (cell) -> (cell._prototype?) and toString.call(cell) == '[object Object]'
+  nilp:      (cell) -> nilp(cell)
+  nvalu:     (cell) -> cell
+  mksymbols: (cell) -> cell
+
+  meaning: (e) ->
+
+    meaningTable = [
+      [sQuote,  ((e) => @meaningQuotation (cadr e))]
+      [sLambda, ((e) => @meaningAbstraction (cadr e), (cddr e))]
+      [sIf,     ((e) => @meaningAlternative (cadr e), (caddr e), (cadddr e))]
+      [sBegin,  ((e) => @meaningSequence (cdr e))]
+      [sSet,    ((e) => @meaningAssignment (cadr e), (caddr e))]
+    ]
+
+    if @atomp e
+      if @symbolp e then (@meaningReference e) else (@meaningQuotation e)
     else
-      kont cons(), mem
+      found = (form[1] for form in forms when form[0](e))
+      if found.length == 1 then found[0](e) else @meaningApplication (car e), (cdr e)
 
-  evaluate exp, env, mem, (fun, mem2) ->
-    evaluateArguments exprs, env, mem2, (value2, mem3) ->
-      if eq (fun sType), sFunction
-        (fun sBehavior) value2, mem3, kont
+  meaningQuotation: (val) ->
+    (env, kont, store) ->
+      (translate val, store, kont)
+
+  meaningReference: (name) ->
+    (env, kont, store) ->
+      kont (store (env name)), store
+
+  # Extensional alternative
+
+  meaningAlternative: (exp1, exp2, exp3) ->
+    boolify = (value) ->
+      if (eq? value (inValue false)) then ((x, y) -> y) else ((x, y) -> x)
+
+    ef = (val, val1, val2) ->
+      val val1, val2
+
+    (env, kont, store) =>
+      hkont = (val, store1) =>
+        ef (boolify val), ((@meaning exp2) env, kont, store1), ((@meaning exp3) env, kont, store1)
+      (@meaning exp1)(env, hkont, store)
+
+  # Assignment
+
+  meaningAssignment: (name, exp) ->
+    (env, kont, store) =>
+      hkont = (val, store1) ->
+        kont value, (extend store1, (env name), val)
+
+      (@meaning exp)(env, hkont, store)
+
+  # Abstraction (keeps a lambda)
+
+  meaningAbstraction: (names, exps) ->
+    (env, kont, store) =>
+      funcrep = (vals, kont1, store1) =>
+        if not (eq (length vals), (length names))
+          throw new LispInterpreterError("Incorrect Arity.")
+        functostore = (store2, addrs) =>
+          (@meaningsSequence exps) (@extends env, names, addrs), kont1, (@extends store2, addrs, vals)
+        allocate store1, (length names), functostore
+      kont inValue, funcrep
+
+  meaningVariable: (name) ->
+    (m) =>
+      (vals, env, kont, store) =>
+        allocate store, 1, (store, addrs) =>
+          addr = (car addrs)
+          m (cdr vals), (@extend env, names, addr), kont, (@extend store, addr, (car vals))
+
+  meaningApplication: (exp, exps) ->
+    (env, kont, store) =>
+      hkont = (func, store1) =>
+        kont2 = (values, store2) ->
+          (ValueToFunction func) values, kont, store2
+        (@meaning exps) env, kont2, store1
+      (@meaning exp) env, hkont, store
+
+  meaningSequence: (exps) ->
+    meaningsMultipleSequence = (exp, exps) =>
+      (env, kont, store) =>
+        hkont = (values, store1) ->
+          (meaningsSequence exps) env, kont, store1
+        (@meaning exp) env, hkont, store
+
+    meaningsSingleSequence = (exp) =>
+      (env, kont, store) =>
+        (@meaning exp) env, kont, store
+
+    (env, kont, store) ->
+      if not (pairp exps)
+        throw new LispInterpreterError("Illegal Syntax")
+      if pairp cdr exps
+        meaningsMultipleSequence (car exps), (cdr exps)
       else
-        throw new LispInterpreterError "Not a function #{(car value2)}"
+        meaningSingleSequence (car exps)
 
-# Creates a memory address for the function, then creates a new memory
-# address for each argument, then evaluates the expressions in the
-# lambda, returning the value of the last one.
+  meanings: (exps) =>
+    meaningSomeArguments = (exp, exps) =>
+      (env, kont, store) =>
+        hkont = (value, store1) ->
+          hkont2 = (values, store2) ->
+            kont (cons value, values), store2
+          (@meanings exps) env, khont2, store1
+        (@meaning exp) env, hkont, store
 
-evaluateLambda = (names, exprs, env, mem, kont) ->
-  allocate 1, mem, (addrs, mem2) ->
-    kont (createFunction (car addrs), (values, mem, kont) ->
-      if eq (length names), (length values)
-        allocate (length names), mem, (addrs, mem2) ->
-          evaluateBegin exprs, (updates env, names, addrs), (updates mem2, addrs, values), kont
-      else
-        throw new LispInterpreterError "Incorrect Arrity"), mem2
+    meaningNoArguments = (env, kont, store) -> (k (cons()), store)
 
-evaluateIf = (expc, expt, expf, env, mem, kont) ->
-  evaluate expc, env, mem, (env, mems) ->
-    evaluate ((env sBoolify) expt, expf), env, mems, kont
-
-evaluateQuote = (c, env, mem, kont) ->
-  transcode2 (normalizeForm c), mem, kont
-
-# By starting over "from here," we undo all side-effect assignments
-# that were effected by expression 1
-
-evaluateOr = (exp1, exp2, env, mem, kont) ->
-  evaluate exp1, env, mem, (value, mem2) ->
-    ((value sBoolify) (-> kont value, mem2), (-> evaluate exp2, env, mem, kont))()
-
-# I like how, in this version, we explicitly throw away the meaning of
-# all but the last statement in evaluateBegin.
-evaluateBegin = (exps, env, mem, kont) ->
-  if pairp (cdr exps)
-    evaluate (car exps), env, mem, (_, mems) ->
-      evaluateBegin (cdr exps), env, mems, kont
-  else
-    evaluate (car exps), env, mem, kont
-
-theEmptyList = (msg) ->
-  switch msg
-    when sType then sNull
-    when sBoolify then (x, y) -> x
-
-createBoolean = (value) ->
-  combinator = if value then ((x, y) -> x) else ((x, y) -> y)
-  (msg) ->
-    switch msg
-      when sType then sBoolean
-      when sBoolify then combinator
-
-createSymbol = (value) ->
-  (msg) ->
-    switch msg
-      when sType then sSymbol
-      when sName then value
-      when sBoolify then (x, y) -> x
-
-createNumber = (value) ->
-  (msg) ->
-    switch msg
-      when sType then sNumber
-      when sValue then value
-      when sBoolify then (x, y) -> x
-
-createString = (value) ->
-  (msg) ->
-    switch msg
-      when sType then sString
-      when sValue then value
-      when sBoolify then (x, y) -> x
-
-createFunction = (tag, behavior) ->
-  (msg) ->
-    switch msg
-      when sType then sFunction
-      when sBoolify then (x, y) -> x
-      when sTag then tag
-      when sBehavior then behavior
-
-# I'm not sure I get the difference between allocate and update.
-# Update appears to have the power to append to the memory list
-# without updating highLocation.  If I'm reading this correct, then
-# what we're actually looking at is a simulation of a memory
-# subsystem, with expandStore/newLocation/allocate taking on the duty
-# of "managing" our stack, and update actually just doing the managing
-# the stack, and letting the garbage collector do its thing when a
-# pointer to memory function goes out of scope.  In short: the
-# allocate collection of functions is "going through the motions" of
-# managing memory; had this been a real memory manager, you'd have
-# a lot more work to do.
-
-allocate = (num, mem, q) ->
-  if (num > 0)
-    do ->
-      addr = newLocation mem
-      allocate (num - 1), (expandStore addr, mem), (addrs, mem2) ->
-        q (cons addr, addrs), mem2
-  else
-    q cons(), mem
-
-allocateList = (values, mem, q) ->
-  consify = (values, q) ->
-    if (pairp values)
-      consify (cdr values), (value, mem2) ->
-        allocatePair (car values), value, mem2, q
+    if pairp exps
+      meaningSomeArguments (car exps), (cdr exps)
     else
-      q theEmptyList, mem
-  consify values, q
+      meaningNoArgument()
 
-allocatePair = (addr, d, mem, q) ->
-  allocate 2, mem, (addrs, mem2) ->
-    q (createPair (car addrs), (cadr addrs)), (update (update mem2, (car addrs), addr), (cadr addrs), d)
+  extend: (fn, pt, im) ->
+    (x) -> if (eq pt, x) then im else (fn x)
 
-createPair = (a, d) ->
-  (msg) ->
-    switch msg
-      when sType then sPair
-      when sBoolify then (x, y) -> x
-      when sSetCar then (mem, val) -> update mem, a, val
-      when sSetCdr then (mem, val) -> update mem, d, val
-      when sCar then a
-      when sCdr then d
+  extends: (fn, pts, ims) ->
+    if (pairp pts)
+      @extend (@extends fn, (cdr pts), (cdr ims)), (car pts), (car ims)
+    else
+      fn
 
-env_global = env_init
-mem_global = mem_init
+  store_init: (a) -> throw new LispInterpreterError "No such address"
+  env_init: (a) -> throw new LispInterpreterError "No such variable"
 
-# The name is pushed onto the global environment, with a corresponding
-# address.  The address is pushed onto the current memory, with the
-# corresponding boxed value.
+  definitial: (name, value) ->
+    allocate @store_init, 1, (store, addrs) =>
+      @env_init = @extend @env_init, name, (car addrs)
+      @store_init = @extend store, (car addrs), value
 
-defInitial = (name, value) ->
-  if typeof name == 'string'
-    name = new Symbol name
-  allocate 1, mem_global, (addrs, mem2) ->
-    env_global = update env_global, name, (car addrs)
-    mem_global = update mem2, (car addrs), value
+  defprimitive: (name, value, arity) ->
+    callable = (values, kont, store) =>
+      if not eq(arity, (length values))
+        throw new LispInterpreterError "Incorrect Arity for #{name}"
+      kont (inValue (value.apply(@, [ValueToNumber(v) for v in values]))), store
+    @definitial name, (inValue callable)
 
-defPrimitive = (name, arity, value) ->
-  defInitial name, allocate 1, mem_global, (addrs, mem2) ->
-    mem_global = expandStore (car addrs), mem2
-    createFunction (car addrs), (values, mem, kont) ->
-      if (eq arity, (length values))
-        value values, mem, kont
-      else
-        throw new LispInterpreterError "Wrong arity for #{name}"
-
-#  ___      _ _   _ _ _         _   _
-# |_ _|_ _ (_) |_(_) (_)_____ _| |_(_)___ _ _
-#  | || ' \| |  _| | | |_ / _` |  _| / _ \ ' \
-# |___|_||_|_|\__|_|_|_/__\__,_|\__|_\___/_||_|
-#
-
-
-defInitial "#t", createBoolean true
-defInitial "#f", createBoolean false
-defInitial "nil", null
-
-defPrimitive "<=", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createBoolean (((car values) sValue) <= ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Comparison requires numbers"
-
-defPrimitive "<", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createBoolean (((car values) sValue) < ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Comparison requires numbers"
-
-defPrimitive ">=", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createBoolean (((car values) sValue) >= ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Comparison requires numbers"
-
-defPrimitive ">", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createBoolean (((car values) sValue) > ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Comparison requires numbers"
-
-defPrimitive "=", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sType), sNumber)
-    kont (createBoolean (((car values) sValue) == ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Comparison requires numbers"
-
-defPrimitive "*", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createNumber (((car values) sValue) * ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Multiplication requires numbers"
-
-defPrimitive "+", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sType), sNumber)
-    kont (createNumber (((car values) sValue) + ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Addition requires numbers"
-
-defPrimitive "/", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createNumber (((car values) sValue) / ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Division requires numbers"
-
-defPrimitive "*", 2, (values, mem, kont) ->
-  if (eq ((car values) sType), sNumber) and (eq ((cadr values) sName), sNumber)
-    kont (createNumber (((car values) sValue) - ((cadr values) sValue))), mem
-  else
-    throw new LispInterpreterError "Subtraction requires numbers"
-
-defPrimitive "cons", 2, (values, mem, kont) ->
-  allocatePair (car values), (cadr values), mem, kont
-
-defPrimitive "car", 1, (values, mem, kont) ->
-  if (eq ((car values) sType) sPair)
-    kont (mem ((car values) sCar)), mem
-  else
-    throw new LispInterpreterError "Not a pair"
-
-defPrimitive "cdr", 1, (values, mem, kont) ->
-  if (eq ((car values) sType) sPair)
-    kont (mem ((car values) sCdr)), mem
-  else
-    throw new LispInterpreterError "Not a pair"
-
-defPrimitive "setcdr", 2, (values, mem, kont) ->
-  if (eq ((car values) sType) sPair)
-    pair = (car values)
-    kont pair, ((pair sSetCdr) mem, (cadr values))
-  else
-    throw new LispInterpreterError "Not a pair"
-
-defPrimitive "setcar", 2, (values, mem, kont) ->
-  if (eq ((car values) sType) sPair)
-    pair = (car values)
-    kont pair, ((pair sSetCar) mem, (cadr values))
-  else
-    throw new LispInterpreterError "Not a pair"
-
-defPrimitive "eq?", 2, (values, mem, kont) ->
-  kont createBoolean (
-    if (eq ((car values) sType), ((cadr values) sType))
-      switch ((car values) sType)
-        when sBoolean
-          ((car values) sBoolify) (((cadr values) sBoolify) true, false), (((cadr values) sBoolify) false, true)
-        when sSymbol
-          eq ((car values) sName), ((cadr values) sName)
-        when sPair
-          (((car values) sCar) == ((cadr values) sCar) and
-           ((car values) sCdr) == ((cadr values) sCdr))
-        when sFunction
-          ((car values) sTag) == ((cadr values) sTag)
-        else false
-    else false)
-
-defPrimitive "eqv?", 2, (values, mem, kont) ->
-  kont createBoolean (
-    if (eq ((car values) sType), ((cadr values) sType))
-      switch ((car values) sType)
-        when sBoolean
-          ((car values) sBoolify) (((cadr values) sBoolify) true, false), (((cadr values) sBoolify) false, true)
-        when sSymbol
-          eq ((car values) sName), ((cadr values) sName)
-        when sNumber
-          ((car values) sValue) == ((cadr values) sValue)
-        when sPair
-          (((car values) sCar) == ((cadr values) sCar) and
-           ((car values) sCdr) == ((cadr values) sCdr))
-        when sFunction
-          ((car values) sTag) == ((cadr values) sTag)
-        else false
-    else false)
+  defarithmetic: (name, value, arity) ->
+    callable = (values, kont, store) ->
+      if not eq arity, (length values)
+        throw new LispInterpreterError "Incorrect Arity for #{name}"
+      kont (inValue (apply value, (map ValueToIngeter, values))), store
+    (@defprimitive name, value, arity) (name), inValue callable
 
 module.exports = (ast, kont) ->
-  evaluate ast, env_global, mem_global, (value, mem) ->
-    kont (transcodeBack value, mem)
+  interpreter = new Interpreter()
+  (meaning ast) @interpreter.env_init, (value, store_final) ->
+    kont (convert value, store_final)
+

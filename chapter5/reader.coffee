@@ -72,25 +72,28 @@ makeReadPair = (delim, type) ->
       return obj if obj instanceof ReadError
       if inStream.done() then return new ReadError "Unexpected end of input"
       if dotted then return new ReadError "More than one symbol after dot in list"
-      if obj instanceof Symbol and obj.name == '.'
+      if @acc(obj) instanceof Symbol and @acc(obj).name == '.'
         dotted = true
         return readEachPair inStream
       cons obj, readEachPair inStream
 
     obj = readEachPair(inStream)
-    inStream.next() 
+    inStream.next()
     if type then cons((new Symbol type), obj) else obj
 
 # Type -> IO -> IO, Node
-prefixReader = (type) ->
-  # IO -> IO, Node
-  (inStream) ->
-    inStream.next()
-    obj = read inStream, true, null, true
-    return obj if obj instanceof ReadError
-    cons((new Symbol type), obj)
 
 class Reader
+  prefixReader = (type) ->
+    # IO -> IO, Node
+    (inStream) ->
+      inStream.next()
+      obj = @read inStream, true, null, true
+      return obj if obj instanceof ReadError
+      cons((new Symbol type), obj)
+
+  "acc": (obj) -> obj
+
   "symbol": (inStream) ->
     symbol = (until (inStream.done() or @[inStream.peek()]? or inStream.peek() in WHITESPACE)
       inStream.next()).join ''
@@ -101,9 +104,9 @@ class Reader
 
   "read": (inStream, eofErrorP = false, eofError = EOF, recursiveP = false, keepComments = false) ->
     inStream = if inStream instanceof Source then inStream else new Source inStream
-  
+
     c = inStream.peek()
-  
+
     # (IO, Char) -> (IO, Node) | Error
     matcher = (inStream, c) =>
       if inStream.done()
@@ -116,7 +119,7 @@ class Reader
       ret = if @[c]? then @[c](inStream) else @symbol(inStream)
       skipWS inStream
       ret
-  
+
     while true
       form = matcher inStream, c
       skip = (not nilp form) and (form instanceof Comment) and not keepComments
@@ -161,7 +164,7 @@ class Reader
     new Comment r
 
 exports.Source = Source
-exports.ReadError = ReadError  
+exports.ReadError = ReadError
 exports.Reader = Reader
 reader = new Reader()
 exports.read = -> reader.read.apply(reader, arguments)
