@@ -25,16 +25,6 @@ eq = (id1, id2) ->
     return id1.name == id2.name
   id1 == id2
 
-# Only called in rich node mode...
-
-astSymbolsToLispSymbols = (node) ->
-  return nil if nilp node
-  throw (new LispInterpreterError "Not a list of variable names") if not node.type == 'list'
-  handler = (cell) ->
-    return nil if nilp cell
-    cons (car cell).value, (handler cdr cell)
-  handler node.value
-
 cadddr = metacadr('cadddr')
 
 consp = (e) ->
@@ -47,7 +37,9 @@ convert = (exp, store) ->
     if consp e
       cons (conv (store (car e)).v), (conv (store (cadr e)).v)
     else
-      e
+      if symbolp e then e.name
+      else if stringp e then '"' + e | '"'
+      else e
   conv exp.v
 
 # 5.2.4
@@ -70,12 +62,10 @@ extend = (next, id, value) ->
 #
 #
 lextends = (fn, ids, values) ->
-  if (pairp pts)
-    extend (@lextends fn, (cdr pts), (cdr ims)), (car pts), (car ims)
+  if (pairp ids)
+    extend (lextends fn, (cdr ids), (cdr values)), (car ids), (car values)
   else
     fn
-
-
 
 translate = (exp, store, qont) ->
   if (pairp exp)
@@ -100,6 +90,22 @@ allocate = (->
       else
         qont store, a
     aloop(num, cons()))()
+
+
+listp =     (cell) -> cell.__type == 'list'
+atomp =     (cell) -> not (cell.__type?) or (not cell.__type == 'list')
+symbolp =   (cell) -> cell instanceof Symbol
+commentp =  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"
+numberp =   (cell) -> typeof cell == 'number'
+stringp =   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == "\""
+boolp =     (cell) -> typeof cell == 'boolean'
+nullp =     (cell) -> cell == null
+vectorp =   (cell) -> (not straight_evaluation.listp cell) and toString.call(cell) == '[object Array]'
+recordp =   (cell) -> (not cell._prototype?) and toSTring.call(cell) == '[object Object]'
+objectp =   (cell) -> (cell._prototype?) and toString.call(cell) == '[object Object]'
+nilp =      (cell) -> nilp(cell)
+nvalu =     (cell) -> cell
+mksymbols = (cell) -> cell
 
 sBehavior = new Symbol 'behavior'
 sBoolean  = new Symbol 'boolean'
@@ -138,6 +144,9 @@ ValueToNumber = (e) ->
   c = parseInt(e.v, 10)
   if (typeof c == 'number') then c else throw new LispInterpreterError("Not a number: " + Object.toString(c))
 
+ValueToPrimitive = (e) ->
+  return e.v
+
 store_init = (a) -> throw new LispInterpreterError "No such address"
 env_init = (a) -> throw new LispInterpreterError "No such variable"  
 
@@ -151,7 +160,7 @@ class Interpreter
 
     @definitial "cons", inValue arity_check "cons", 2, (values, kont, store) =>
       allocate store, 2, (store, addrs) =>
-        kont (inValue (cons (car addr), (cadr addr))), (@lextends store, addrs, values)
+        kont (inValue (cons (car addrs), (cadr addrs))), (lextends store, addrs, values)
   
     @definitial "car", inValue arity_check "car", 1, (values, kont, store) =>
       kont (store car @valueToPair (car values)), store
@@ -214,34 +223,20 @@ class Interpreter
     @definitial "length", null
     @definitial "primes", null
 
-
-  listp:     (cell) -> cell.__type == 'list'
-  atomp:     (cell) -> not (cell.__type?) or (not cell.__type == 'list')
-  symbolp:   (cell) -> cell instanceof Symbol
-  commentp:  (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == ";"
-  numberp:   (cell) -> typeof cell == 'number'
-  stringp:   (cell) -> typeof cell == 'string' and cell.length > 0 and cell[0] == "\""
-  boolp:     (cell) -> typeof cell == 'boolean'
-  nullp:     (cell) -> cell == null
-  vectorp:   (cell) -> (not straight_evaluation.listp cell) and toString.call(cell) == '[object Array]'
-  recordp:   (cell) -> (not cell._prototype?) and toSTring.call(cell) == '[object Object]'
-  objectp:   (cell) -> (cell._prototype?) and toString.call(cell) == '[object Object]'
-  nilp:      (cell) -> nilp(cell)
-  nvalu:     (cell) -> cell
-  mksymbols: (cell) -> cell
-
   meaning: (e) ->
     meaningTable =
-      "'":      ((e) => @meaningQuotation (cadr e))
+      "quote":      ((e) => @meaningQuotation (cadr e))
       'lambda': ((e) => @meaningAbstraction (cadr e), (cddr e))
       'if':     ((e) => @meaningAlternative (cadr e), (caddr e), (cadddr e))
       'begin':  ((e) => @meaningSequence (cdr e))
       'set!':   ((e) => @meaningAssignment (cadr e), (caddr e))
 
-    if (@atomp e)
-      if (@symbolp e) then (@meaningReference e.name) else (@meaningQuotation e)
-    else if meaningTable[(car e)]?
-      meaningTable[(car e)](e)
+    if (atomp e)
+      return if (symbolp e) then (@meaningReference e.name) else (@meaningQuotation e)
+
+    n = if symbolp (car e) then (car e).name else (car e)
+    if meaningTable[n]?
+      meaningTable[n](e)
     else
       @meaningApplication (car e), (cdr e)
 
@@ -284,7 +279,7 @@ class Interpreter
         if not (eq (length vals), (length names))
           throw new LispInterpreterError("Incorrect Arity.")
         functostore = (store2, addrs) =>
-          (@meaningsSequence exps) (@lextends env, names, addrs), kont1, (@lextends store2, addrs, vals)
+          (@meaningsSequence exps) (lextends env, names, addrs), kont1, (lextends store2, addrs, vals)
         allocate store1, (length names), functostore
       kont inValue, funcrep
 
@@ -350,7 +345,7 @@ class Interpreter
     callable = (values, kont, store) =>
       if not eq arity, (length values)
         throw new LispInterpreterError "Incorrect Arity for #{name}"
-      kont (inValue (value.apply(null, listToVector(values)))), store
+      kont (value.apply(null, listToVector(values))), store
     @definitial name, (inValue callable)
 
   defarithmetic: (name, value, arity) ->
