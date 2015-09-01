@@ -90,7 +90,7 @@ class Reader
       inStream.next()
       obj = @read inStream, true, null, true
       return obj if obj instanceof ReadError
-      cons((new Symbol type), obj)
+      list((new Symbol type), obj)
 
   "acc": (obj) -> obj
 

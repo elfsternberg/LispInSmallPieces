@@ -6,10 +6,14 @@
 {Node, Comment, Symbol} = require '../chapter5/reader_types'
 {inspect} = require 'util'
 
-itap = (a) -> return inspect a, true, null, false
+itap = (a) -> console.log inspect a, true, null, false; a
+ftap = (a) -> console.log Function.prototype.toString.call(a); a
+
 
 class Value
+  vpos = 0
   constructor: (@v) ->
+    vpos = vpos + 1
 
 inValue = (f) ->
   new Value(f)
@@ -26,6 +30,9 @@ eq = (id1, id2) ->
   id1 == id2
 
 cadddr = metacadr('cadddr')
+
+# Hack
+gsym = (x) -> if (x instanceof Symbol) then x.name else x
 
 consp = (e) ->
   ((pairp e) and (typeof (car e) == 'number') and
@@ -147,8 +154,8 @@ ValueToNumber = (e) ->
 ValueToPrimitive = (e) ->
   return e.v
 
-store_init = (a) -> throw new LispInterpreterError "No such address"
-env_init = (a) -> throw new LispInterpreterError "No such variable"  
+store_init = (a) -> throw new LispInterpreterError "No such address: #{a}"
+env_init = (a) -> throw new LispInterpreterError "No such variable: #{a}"  
 
 class Interpreter
   constructor: ->
@@ -156,7 +163,7 @@ class Interpreter
       (values, kont, store) =>
         if not eq (length values), arity
           throw new LispInterpreterError "Incorrect Arity for #{name}"
-        fn.call(@, values, kont, store)
+        fn(values, kont, store)
 
     @definitial "cons", inValue arity_check "cons", 2, (values, kont, store) =>
       allocate store, 2, (store, addrs) =>
@@ -208,37 +215,59 @@ class Interpreter
     @definitial '#f', (inValue false)
     @definitial 'nil', (inValue cons())
 
-    @definitial "x", null
-    @definitial "y", null
-    @definitial "z", null
-    @definitial "a", null
-    @definitial "b", null
-    @definitial "c", null
-    @definitial "foo", null
-    @definitial "bar", null
-    @definitial "hux", null
-    @definitial "fib", null
-    @definitial "fact", null
-    @definitial "visit", null
-    @definitial "length", null
-    @definitial "primes", null
+    @definitial "x", inValue (new Object(null))
+    @definitial "y", inValue (new Object(null))
+    @definitial "z", inValue (new Object(null))
+    @definitial "a", inValue (new Object(null))
+    @definitial "b", inValue (new Object(null))
+    @definitial "c", inValue (new Object(null))
+    @definitial "foo", inValue (new Object(null))
+    @definitial "bar", inValue (new Object(null))
+    @definitial "hux", inValue (new Object(null))
+    @definitial "fib", inValue (new Object(null))
+    @definitial "fact", inValue (new Object(null))
+    @definitial "visit", inValue (new Object(null))
+    @definitial "length", inValue (new Object(null))
+    @definitial "filter", inValue (new Object(null))
+    @definitial "primes", inValue (new Object(null))
 
   meaning: (e) ->
     meaningTable =
-      "quote":      ((e) => @meaningQuotation (cadr e))
+      "quote":  ((e) => @meaningQuotation (cadr e))
       'lambda': ((e) => @meaningAbstraction (cadr e), (cddr e))
       'if':     ((e) => @meaningAlternative (cadr e), (caddr e), (cadddr e))
       'begin':  ((e) => @meaningSequence (cdr e))
       'set!':   ((e) => @meaningAssignment (cadr e), (caddr e))
 
     if (atomp e)
-      return if (symbolp e) then (@meaningReference e.name) else (@meaningQuotation e)
-
-    n = if symbolp (car e) then (car e).name else (car e)
+      return if (symbolp e) then (@meaningReference gsym(e)) else (@meaningQuotation e)
+    n = gsym(car e)
     if meaningTable[n]?
       meaningTable[n](e)
     else
       @meaningApplication (car e), (cdr e)
+
+  meaningSequence: (exps) =>
+    (env, kont, store) =>
+      (@meaningsSequence exps) env, kont, store
+
+  meaningsMultipleSequence: (exp, exps) ->
+    (env, kont, store) =>
+      hkont = (values, store1) =>
+        (@meaningsSequence exps) env, kont, store1
+      (@meaning exp) env, hkont, store
+
+  meaningsSingleSequence: (exp) ->
+    (env, kont, store) =>
+      (@meaning exp) env, kont, store
+
+  meaningsSequence: (exps) ->
+    if not (pairp exps)
+      throw new LispInterpreterError("Illegal Syntax")
+    if pairp cdr exps
+      @meaningsMultipleSequence (car exps), (cdr exps)
+    else
+      @meaningsSingleSequence (car exps)
 
   meaningQuotation: (val) ->
     (env, kont, store) ->
@@ -265,11 +294,12 @@ class Interpreter
   # Assignment
 
   meaningAssignment: (name, exp) ->
+    name = if name instanceof Symbol then name.name else name
+    console.log(name)
     (env, kont, store) =>
       hkont = (val, store1) ->
-        kont value, (extend store1, (env name), val)
-
-      (@meaning exp)(env, hkont, store)
+        kont val, (extend store1, (env name), val)
+      (@meaning exp) env, hkont, store
 
   # Abstraction (keeps a lambda)
 
@@ -278,10 +308,10 @@ class Interpreter
       funcrep = (vals, kont1, store1) =>
         if not (eq (length vals), (length names))
           throw new LispInterpreterError("Incorrect Arity.")
-        functostore = (store2, addrs) =>
+        argnamestostore = (store2, addrs) =>
           (@meaningsSequence exps) (lextends env, names, addrs), kont1, (lextends store2, addrs, vals)
-        allocate store1, (length names), functostore
-      kont inValue, funcrep
+        allocate store1, (length names), argnamestostore
+      kont (inValue funcrep), store
 
   meaningVariable: (name) ->
     (m) ->
@@ -297,25 +327,6 @@ class Interpreter
           (ValueToFunction func) values, kont, store2
         (@meanings exps) env, kont2, store1
       (@meaning exp) env, hkont, store
-
-  meaningSequence: (exps) ->
-    meaningsMultipleSequence = (exp, exps) =>
-      (env, kont, store) =>
-        hkont = (values, store1) ->
-          (meaningsSequence exps) env, kont, store1
-        (@meaning exp) env, hkont, store
-
-    meaningsSingleSequence = (exp) =>
-      (env, kont, store) =>
-        (@meaning exp) env, kont, store
-
-    (env, kont, store) ->
-      if not (pairp exps)
-        throw new LispInterpreterError("Illegal Syntax")
-      if pairp cdr exps
-        meaningsMultipleSequence (car exps), (cdr exps)
-      else
-        meaningSingleSequence (car exps)
 
   meanings: (exps) =>
     meaningSomeArguments = (exp, exps) =>
